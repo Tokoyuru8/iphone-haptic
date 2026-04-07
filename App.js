@@ -1,106 +1,57 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { StyleSheet, Text, View, TextInput, Pressable, Platform } from "react-native";
+import { StyleSheet, Text, View, TextInput, Pressable } from "react-native";
 import { StatusBar } from "expo-status-bar";
-import { HapticEngine } from "expo-better-haptics";
+import * as Haptics from "expo-better-haptics";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// --- Core Haptics エンジン管理 ---
-let engine = null;
-
-async function initEngine() {
-  if (Platform.OS !== "ios") return;
-  try {
-    engine = new HapticEngine();
-    await engine.start();
-  } catch (e) {
-    console.log("Haptic Engine init error:", e);
-  }
-}
-
-async function playHaptic(intensity, sharpness, duration = 0.3) {
-  if (!engine) return;
-  try {
-    await engine.playPattern([
-      {
-        type: "HapticContinuous",
-        time: 0,
-        duration: duration,
-        parameters: {
-          intensity: intensity,
-          sharpness: sharpness,
-        },
-      },
-    ]);
-  } catch (e) {
-    // エンジン停止時は再起動
-    try {
-      await engine.start();
-      await engine.playPattern([
-        {
-          type: "HapticContinuous",
-          time: 0,
-          duration: duration,
-          parameters: {
-            intensity: intensity,
-            sharpness: sharpness,
-          },
-        },
-      ]);
-    } catch (e2) {
-      console.log("Haptic play error:", e2);
-    }
-  }
-}
-
 // --- 振動パターン定義 ---
-// Core Haptics: intensity 0.0-1.0, sharpness 0.0-1.0, duration秒
+// Core Haptics: vibrateAsync / playContinuousAsync で強度・シャープネス・長さを制御
 
 async function vibratePattern(direction, intensity) {
   if (direction === "STOP") return;
 
-  // intensityを0.5-1.0の範囲にマッピング（弱すぎ防止）
   const i = Math.max(0.5, intensity);
 
   switch (direction) {
     case "LEFT":
-      // 強い単発パルス（0.5秒）
-      await playHaptic(i, 0.8, 0.5);
+      // 強い単発（0.5秒連続振動）
+      await Haptics.playContinuousAsync(i, 0.8, 0.5);
       break;
 
     case "RIGHT":
       // 2連パルス
-      await playHaptic(i, 0.8, 0.3);
+      await Haptics.playContinuousAsync(i, 0.8, 0.3);
       await sleep(400);
-      await playHaptic(i, 0.8, 0.3);
+      await Haptics.playContinuousAsync(i, 0.8, 0.3);
       break;
 
     case "UP":
       // 弱→強のスウィープ（上昇感）
-      await playHaptic(0.3, 0.3, 0.2);
+      await Haptics.playContinuousAsync(0.3, 0.3, 0.2);
       await sleep(250);
-      await playHaptic(0.6, 0.5, 0.2);
+      await Haptics.playContinuousAsync(0.6, 0.5, 0.2);
       await sleep(250);
-      await playHaptic(1.0, 1.0, 0.3);
+      await Haptics.playContinuousAsync(1.0, 1.0, 0.3);
       break;
 
     case "DOWN":
       // 強→弱のスウィープ（下降感）
-      await playHaptic(1.0, 1.0, 0.3);
+      await Haptics.playContinuousAsync(1.0, 1.0, 0.3);
       await sleep(250);
-      await playHaptic(0.6, 0.5, 0.2);
+      await Haptics.playContinuousAsync(0.6, 0.5, 0.2);
       await sleep(250);
-      await playHaptic(0.3, 0.3, 0.2);
+      await Haptics.playContinuousAsync(0.3, 0.3, 0.2);
       break;
 
     case "FORWARD":
     case "ALL_ON":
       // 連続的な強振動
-      await playHaptic(i, 0.5, 0.4);
+      await Haptics.playContinuousAsync(i, 0.5, 0.4);
       break;
 
     default:
-      await playHaptic(i, 0.5, 0.3);
+      await Haptics.playContinuousAsync(i, 0.5, 0.3);
   }
 }
 
@@ -117,11 +68,6 @@ export default function App() {
   const currentDirRef = useRef("STOP");
   const currentIntRef = useRef(0);
   const loopRef = useRef(null);
-
-  // Core Haptics エンジン初期化
-  useEffect(() => {
-    initEngine();
-  }, []);
 
   const startVibLoop = useCallback(() => {
     if (loopRef.current) return;
