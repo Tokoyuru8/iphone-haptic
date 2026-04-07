@@ -1,0 +1,55 @@
+name: Build iOS IPA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate iOS project
+        run: npx expo prebuild --platform ios --no-install
+
+      - name: Install CocoaPods
+        run: cd ios && pod install
+
+      - name: Build unsigned IPA
+        run: |
+          cd ios
+          xcodebuild \
+            -workspace iphonehaptic.xcworkspace \
+            -scheme iphonehaptic \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination generic/platform=iOS \
+            -archivePath build/iphonehaptic.xcarchive \
+            archive \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Create IPA
+        run: |
+          mkdir -p build/Payload
+          cp -r ios/build/iphonehaptic.xcarchive/Products/Applications/iphonehaptic.app build/Payload/
+          cd build
+          zip -r iphonehaptic.ipa Payload
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: iphonehaptic-ipa
+          path: build/iphonehaptic.ipa
