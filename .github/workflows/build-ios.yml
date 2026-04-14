@@ -23,47 +23,6 @@ jobs:
       - name: Generate iOS project
         run: npx expo prebuild --platform ios --no-install
 
-      - name: Add audio assets to iOS bundle
-        run: |
-          cp assets/impact_bass.wav ios/iphonehaptic/
-          # pbxprojにリソースとして追加
-          python3 - <<'PYEOF'
-          import re
-          pbx = "ios/iphonehaptic.xcodeproj/project.pbxproj"
-          with open(pbx, "r") as f:
-              content = f.read()
-          # ファイル参照ID
-          file_ref_id = "AAA0000001"
-          build_file_id = "AAA0000002"
-          # PBXFileReference追加
-          anchor = "/* End PBXFileReference section */"
-          ref_entry = f'\t\t{file_ref_id} /* impact_bass.wav */ = {{isa = PBXFileReference; lastKnownFileType = audio.wav; path = impact_bass.wav; sourceTree = "<group>"; }};\n'
-          content = content.replace(anchor, ref_entry + "\t\t" + anchor)
-          # PBXBuildFile追加
-          anchor2 = "/* End PBXBuildFile section */"
-          build_entry = f'\t\t{build_file_id} /* impact_bass.wav in Resources */ = {{isa = PBXBuildFile; fileRef = {file_ref_id} /* impact_bass.wav */; }};\n'
-          content = content.replace(anchor2, build_entry + "\t\t" + anchor2)
-          # PBXResourcesBuildPhase追加
-          content = content.replace(
-              "/* End PBXResourcesBuildPhase section */",
-              ""
-          )
-          # リソースフェーズにファイルを追加
-          resource_pattern = r'(isa = PBXResourcesBuildPhase;[^}]*files = \(\n)'
-          content = re.sub(resource_pattern, r'\1\t\t\t\t' + build_file_id + ' /* impact_bass.wav in Resources */,\n', content)
-          # End PBXResourcesBuildPhase sectionを戻す
-          content = content.replace(
-              "/* Begin PBXResourcesBuildPhase section */",
-              "/* Begin PBXResourcesBuildPhase section */"
-          )
-          # グループにファイル参照を追加 (iphonehapticグループ)
-          group_pattern = r'(path = iphonehaptic;\n\t\t\tsourceTree = "<group>";\n\t\t\tchildren = \(\n)'
-          content = re.sub(group_pattern, r'\1\t\t\t\t' + file_ref_id + ' /* impact_bass.wav */,\n', content)
-          with open(pbx, "w") as f:
-              f.write(content)
-          print("Added impact_bass.wav to Xcode project")
-          PYEOF
-
       - name: Install CocoaPods
         run: cd ios && pod install
 
@@ -86,6 +45,8 @@ jobs:
         run: |
           mkdir -p build/Payload
           cp -r ios/build/iphonehaptic.xcarchive/Products/Applications/iphonehaptic.app build/Payload/
+          # AudioCustom用の音声ファイルを.appバンドルに直接コピー
+          cp assets/impact_bass.wav build/Payload/iphonehaptic.app/
           cd build
           zip -r iphonehaptic.ipa Payload
 
