@@ -134,18 +134,8 @@ async function vibratePattern(direction, intensity) {
       break;
 
     case "GOAL":
-      // 到着パターン: 3回の成功フィードバック（トン・トン・トーン）
-      await Haptics.playAHAPAsync({
-        Pattern: [
-          { Event: audioImpact(0) },
-          { Event: transient(0, 1.0, 1.0) },
-          { Event: audioImpact(0.2) },
-          { Event: transient(0.2, 1.0, 1.0) },
-          { Event: audioImpact(0.4) },
-          { Event: transient(0.4, 1.0, 0.5) },
-          { Event: continuous(0.41, 0.4, 1.0, 0.5) },
-        ],
-      });
+      // 到着パターン: iOS標準の成功フィードバック
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       break;
 
     default:
@@ -226,6 +216,7 @@ export default function App() {
           } else if (dir === "GOAL") {
             stopVibLoop();
             await vibratePattern(dir, intensity);
+            await sleep(1000);
           } else {
             await vibratePattern(dir, intensity);
             if (dir === "FORWARD" || dir === "ALL_ON") {
