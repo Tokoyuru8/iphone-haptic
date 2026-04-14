@@ -224,18 +224,16 @@ export default function App() {
           currentDirRef.current = dir;
           currentIntRef.current = intensity;
 
-          if (dir === "STOP" || intensity === 0) {
-            stopVibLoop();
-          } else if (dir === "GOAL") {
+          if (dir === "GOAL") {
             stopVibLoop();
             if (goalSound) {
-              // AudioCustomでgoal.wav付き振動
               await vibratePattern("GOAL", intensity);
             } else {
-              // 音なし: 振動のみ
               await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             }
             await sleep(1000);
+          } else if (dir === "STOP" || intensity === 0) {
+            stopVibLoop();
           } else {
             await vibratePattern(dir, intensity);
             if (dir === "FORWARD" || dir === "ALL_ON") {
