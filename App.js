@@ -45,20 +45,22 @@ async function vibratePattern(direction, intensity) {
 
   switch (direction) {
     case "UP":
-      // 上昇メタファー: intensity漸増 + sharpness高(鋭い=上)
+      // 上昇メタファー: intensity漸増 + sharpness高(鋭い=上) + continuous裏打ちで体感強化
       await Haptics.playAHAPAsync(makeAHAP([
-        transient(0, 0.3, 0.8),
-        transient(0.1, 0.6, 0.8),
-        transient(0.2, 1.0, 0.8),
+        continuous(0, 0.3, 0.8, 0.8),
+        transient(0, 0.6, 1.0),
+        transient(0.1, 0.8, 1.0),
+        transient(0.2, 1.0, 1.0),
       ]));
       break;
 
     case "DOWN":
-      // 下降メタファー: intensity漸減 + sharpness低(丸い=下)
+      // 下降メタファー: intensity漸減 + sharpness低(丸い=下) + continuous裏打ちで体感強化
       await Haptics.playAHAPAsync(makeAHAP([
-        transient(0, 1.0, 0.2),
-        transient(0.1, 0.6, 0.2),
-        transient(0.2, 0.3, 0.2),
+        continuous(0, 0.3, 0.8, 0.3),
+        transient(0, 1.0, 0.4),
+        transient(0.1, 0.8, 0.3),
+        transient(0.2, 0.6, 0.2),
       ]));
       break;
 
