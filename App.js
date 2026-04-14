@@ -160,6 +160,17 @@ export default function App() {
   const [currentDir, setCurrentDir] = useState("STOP");
   const [commandCount, setCommandCount] = useState(0);
   const [goalSound, setGoalSound] = useState(true);
+  const goalSoundRef = useRef(null);
+
+  useEffect(() => {
+    Audio.setAudioModeAsync({ playsInSilentModeIOS: true }).catch(() => {});
+    Audio.Sound.createAsync(require("./assets/goal.wav")).then(({ sound }) => {
+      goalSoundRef.current = sound;
+    }).catch(() => {});
+    return () => {
+      if (goalSoundRef.current) goalSoundRef.current.unloadAsync();
+    };
+  }, []);
   const wsRef = useRef(null);
   const reconnectRef = useRef(null);
   const currentDirRef = useRef("STOP");
@@ -218,15 +229,9 @@ export default function App() {
           } else if (dir === "GOAL") {
             stopVibLoop();
             await vibratePattern(dir, intensity);
-            if (goalSound) {
+            if (goalSound && goalSoundRef.current) {
               try {
-                const { sound } = await Audio.Sound.createAsync(
-                  require("./assets/goal.wav")
-                );
-                await sound.playAsync();
-                sound.setOnPlaybackStatusUpdate((s) => {
-                  if (s.didJustFinish) sound.unloadAsync();
-                });
+                await goalSoundRef.current.replayAsync();
               } catch (e) {}
             }
             await sleep(1000);
