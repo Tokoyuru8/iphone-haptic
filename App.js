@@ -8,6 +8,34 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // --- 振動パターン定義 ---
 // Core Haptics: vibrateAsync / playContinuousAsync で強度・シャープネス・長さを制御
 
+// AHAPパターン: Transient（瞬間的な衝撃）とContinuous（持続振動）を重ねて最大の振動を出す
+function makeAHAP(events) {
+  return { Pattern: events.map((e) => ({ Event: e })) };
+}
+
+function transient(time, intensity, sharpness) {
+  return {
+    Time: time,
+    EventType: "HapticTransient",
+    EventParameters: [
+      { ParameterID: "HapticIntensity", ParameterValue: intensity },
+      { ParameterID: "HapticSharpness", ParameterValue: sharpness },
+    ],
+  };
+}
+
+function continuous(time, duration, intensity, sharpness) {
+  return {
+    Time: time,
+    EventType: "HapticContinuous",
+    EventDuration: duration,
+    EventParameters: [
+      { ParameterID: "HapticIntensity", ParameterValue: intensity },
+      { ParameterID: "HapticSharpness", ParameterValue: sharpness },
+    ],
+  };
+}
+
 async function vibratePattern(direction, intensity) {
   if (direction === "STOP") return;
 
@@ -15,43 +43,61 @@ async function vibratePattern(direction, intensity) {
 
   switch (direction) {
     case "LEFT":
-      // 強い単発（0.5秒連続振動）
-      await Haptics.playContinuousAsync(i, 0.8, 0.5);
+      // 強い単発: Transient衝撃 + Continuous重ね
+      await Haptics.playAHAPAsync(makeAHAP([
+        transient(0, 1.0, 1.0),
+        continuous(0, 0.5, 1.0, 0.8),
+      ]));
       break;
 
     case "RIGHT":
-      // 2連パルス
-      await Haptics.playContinuousAsync(i, 0.8, 0.3);
-      await sleep(400);
-      await Haptics.playContinuousAsync(i, 0.8, 0.3);
+      // 2連: Transient+Continuous x2
+      await Haptics.playAHAPAsync(makeAHAP([
+        transient(0, 1.0, 1.0),
+        continuous(0, 0.3, 1.0, 0.8),
+        transient(0.5, 1.0, 1.0),
+        continuous(0.5, 0.3, 1.0, 0.8),
+      ]));
       break;
 
     case "UP":
-      // 弱→強のスウィープ（上昇感）
-      await Haptics.playContinuousAsync(0.3, 0.3, 0.2);
-      await sleep(250);
-      await Haptics.playContinuousAsync(0.6, 0.5, 0.2);
-      await sleep(250);
-      await Haptics.playContinuousAsync(1.0, 1.0, 0.3);
+      // 上昇: 弱→中→強
+      await Haptics.playAHAPAsync(makeAHAP([
+        transient(0, 0.3, 0.3),
+        continuous(0, 0.2, 0.3, 0.3),
+        transient(0.35, 0.6, 0.6),
+        continuous(0.35, 0.2, 0.6, 0.5),
+        transient(0.7, 1.0, 1.0),
+        continuous(0.7, 0.3, 1.0, 1.0),
+      ]));
       break;
 
     case "DOWN":
-      // 強→弱のスウィープ（下降感）
-      await Haptics.playContinuousAsync(1.0, 1.0, 0.3);
-      await sleep(250);
-      await Haptics.playContinuousAsync(0.6, 0.5, 0.2);
-      await sleep(250);
-      await Haptics.playContinuousAsync(0.3, 0.3, 0.2);
+      // 下降: 強→中→弱
+      await Haptics.playAHAPAsync(makeAHAP([
+        transient(0, 1.0, 1.0),
+        continuous(0, 0.3, 1.0, 1.0),
+        transient(0.45, 0.6, 0.6),
+        continuous(0.45, 0.2, 0.6, 0.5),
+        transient(0.8, 0.3, 0.3),
+        continuous(0.8, 0.2, 0.3, 0.3),
+      ]));
       break;
 
     case "FORWARD":
     case "ALL_ON":
-      // 連続的な強振動
-      await Haptics.playContinuousAsync(i, 0.5, 0.4);
+      // 最大持続振動
+      await Haptics.playAHAPAsync(makeAHAP([
+        transient(0, 1.0, 0.5),
+        continuous(0, 0.5, i, 0.5),
+      ]));
       break;
 
     default:
-      await Haptics.playContinuousAsync(i, 0.5, 0.3);
+      await Haptics.playAHAPAsync(makeAHAP([
+        transient(0, 1.0, 0.5),
+        continuous(0, 0.3, i, 0.5),
+      ]));
   }
 }
 
