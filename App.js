@@ -36,71 +36,65 @@ function continuous(time, duration, intensity, sharpness) {
   };
 }
 
-// リズム（パルス数・間隔）で方向を区別する
-// 全て最大強度。違いは「回数」と「テンポ」
+// 方向パターン設計（先行研究ベース）
+// 上下: メタファー（intensity漸増/漸減 + sharpness差）— Spence 2011, Rusconi et al. 2006
+// 左右: Tactonリズム（短-長 / 長-短）— Brown, Brewster & Purchase 2005
+// 全パターン300ms以内でリアルタイム性確保
 async function vibratePattern(direction, intensity) {
   if (direction === "STOP") return;
 
   switch (direction) {
-    case "LEFT":
-      // 1回 長いバズ (0.6秒)
-      await Haptics.playAHAPAsync(makeAHAP([
-        transient(0, 1.0, 1.0),
-        continuous(0, 0.6, 1.0, 1.0),
-      ]));
-      break;
-
-    case "RIGHT":
-      // 2回 短いバズ (トッ・トッ)
-      await Haptics.playAHAPAsync(makeAHAP([
-        transient(0, 1.0, 1.0),
-        continuous(0, 0.15, 1.0, 1.0),
-        transient(0.4, 1.0, 1.0),
-        continuous(0.4, 0.15, 1.0, 1.0),
-      ]));
-      break;
-
     case "UP":
-      // 3回 速いパルス (トトト)
+      // 上昇メタファー: intensity漸増 + sharpness高(鋭い=上)
       await Haptics.playAHAPAsync(makeAHAP([
-        transient(0, 1.0, 1.0),
-        continuous(0, 0.1, 1.0, 1.0),
-        transient(0.2, 1.0, 1.0),
-        continuous(0.2, 0.1, 1.0, 1.0),
-        transient(0.4, 1.0, 1.0),
-        continuous(0.4, 0.1, 1.0, 1.0),
+        transient(0, 0.3, 0.8),
+        transient(0.1, 0.6, 0.8),
+        transient(0.2, 1.0, 0.8),
       ]));
       break;
 
     case "DOWN":
-      // 1回 超長いバズ (1.2秒) -- LEFTの2倍の長さで明確に区別
+      // 下降メタファー: intensity漸減 + sharpness低(丸い=下)
       await Haptics.playAHAPAsync(makeAHAP([
-        transient(0, 1.0, 0.3),
-        continuous(0, 1.2, 1.0, 0.3),
+        transient(0, 1.0, 0.2),
+        transient(0.1, 0.6, 0.2),
+        transient(0.2, 0.3, 0.2),
+      ]));
+      break;
+
+    case "LEFT":
+      // Tactonリズム: 短→長 (ト・トーー)
+      await Haptics.playAHAPAsync(makeAHAP([
+        continuous(0, 0.03, 0.8, 0.5),
+        transient(0, 0.8, 0.5),
+        continuous(0.13, 0.15, 0.8, 0.5),
+        transient(0.13, 0.8, 0.5),
+      ]));
+      break;
+
+    case "RIGHT":
+      // Tactonリズム: 長→短 (トーー・ト)
+      await Haptics.playAHAPAsync(makeAHAP([
+        continuous(0, 0.15, 0.8, 0.5),
+        transient(0, 0.8, 0.5),
+        continuous(0.25, 0.03, 0.8, 0.5),
+        transient(0.25, 0.8, 0.5),
       ]));
       break;
 
     case "FORWARD":
     case "ALL_ON":
-      // 連続パルス (トトトトト) 5回高速
+      // 距離フィードバック: 強い連続振動
       await Haptics.playAHAPAsync(makeAHAP([
-        transient(0, 1.0, 0.7),
-        continuous(0, 0.08, 1.0, 0.7),
-        transient(0.13, 1.0, 0.7),
-        continuous(0.13, 0.08, 1.0, 0.7),
-        transient(0.26, 1.0, 0.7),
-        continuous(0.26, 0.08, 1.0, 0.7),
-        transient(0.39, 1.0, 0.7),
-        continuous(0.39, 0.08, 1.0, 0.7),
-        transient(0.52, 1.0, 0.7),
-        continuous(0.52, 0.08, 1.0, 0.7),
+        transient(0, 1.0, 0.5),
+        continuous(0, 0.4, Math.max(0.5, intensity), 0.5),
       ]));
       break;
 
     default:
       await Haptics.playAHAPAsync(makeAHAP([
-        transient(0, 1.0, 1.0),
-        continuous(0, 0.3, 1.0, 1.0),
+        transient(0, 0.8, 0.5),
+        continuous(0, 0.2, 0.8, 0.5),
       ]));
   }
 }
