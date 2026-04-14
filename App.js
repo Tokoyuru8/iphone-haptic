@@ -123,12 +123,27 @@ async function vibratePattern(direction, intensity) {
 
     case "FORWARD":
     case "ALL_ON":
-      // 距離フィードバック: 最大連続振動 + AudioCustom同期
+      // 距離フィードバック: intensityが距離に連動（近い=弱い、遠い=強い）
+      await Haptics.playAHAPAsync({
+        Pattern: [
+          { Event: audioImpact(0) },
+          { Event: transient(0, Math.max(0.4, intensity), 1.0) },
+          { Event: continuous(0.01, 0.4, Math.max(0.4, intensity), 0.5) },
+        ],
+      });
+      break;
+
+    case "GOAL":
+      // 到着パターン: 3回の成功フィードバック（トン・トン・トーン）
       await Haptics.playAHAPAsync({
         Pattern: [
           { Event: audioImpact(0) },
           { Event: transient(0, 1.0, 1.0) },
-          { Event: continuous(0.01, 0.4, 1.0, 1.0) },
+          { Event: audioImpact(0.2) },
+          { Event: transient(0.2, 1.0, 1.0) },
+          { Event: audioImpact(0.4) },
+          { Event: transient(0.4, 1.0, 0.5) },
+          { Event: continuous(0.41, 0.4, 1.0, 0.5) },
         ],
       });
       break;
@@ -208,6 +223,9 @@ export default function App() {
 
           if (dir === "STOP" || intensity === 0) {
             stopVibLoop();
+          } else if (dir === "GOAL") {
+            stopVibLoop();
+            await vibratePattern(dir, intensity);
           } else {
             await vibratePattern(dir, intensity);
             if (dir === "FORWARD" || dir === "ALL_ON") {
@@ -259,9 +277,9 @@ export default function App() {
   const statusColor =
     status === "接続済み" ? "#4CAF50" : status === "接続中..." ? "#FF9800" : "#F44336";
 
-  const dirArrow = { UP: "^", DOWN: "v", LEFT: "<", RIGHT: ">", FORWARD: "O", STOP: "-", ALL_ON: "O" };
-  const dirColor = { UP: "#4CAF50", DOWN: "#F44336", LEFT: "#2196F3", RIGHT: "#FF9800", FORWARD: "#9C27B0", STOP: "#555", ALL_ON: "#9C27B0" };
-  const dirLabel = { UP: "UP", DOWN: "DOWN", LEFT: "LEFT", RIGHT: "RIGHT", FORWARD: "FWD", STOP: "STOP", ALL_ON: "ALL" };
+  const dirArrow = { UP: "^", DOWN: "v", LEFT: "<", RIGHT: ">", FORWARD: "O", STOP: "-", ALL_ON: "O", GOAL: "!" };
+  const dirColor = { UP: "#4CAF50", DOWN: "#F44336", LEFT: "#2196F3", RIGHT: "#FF9800", FORWARD: "#9C27B0", STOP: "#555", ALL_ON: "#9C27B0", GOAL: "#FFD700" };
+  const dirLabel = { UP: "UP", DOWN: "DOWN", LEFT: "LEFT", RIGHT: "RIGHT", FORWARD: "FWD", STOP: "STOP", ALL_ON: "ALL", GOAL: "GOAL!" };
 
   return (
     <View style={styles.container}>
@@ -309,7 +327,7 @@ export default function App() {
 
       <Text style={styles.label}>振動テスト</Text>
       <View style={styles.testRow}>
-        {["LEFT", "RIGHT", "UP", "DOWN", "FORWARD"].map((dir) => (
+        {["LEFT", "RIGHT", "UP", "DOWN", "FORWARD", "GOAL"].map((dir) => (
           <Pressable
             key={dir}
             style={styles.testBtn}
