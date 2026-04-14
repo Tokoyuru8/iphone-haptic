@@ -76,22 +76,22 @@ async function vibratePattern(direction, intensity) {
       break;
 
     case "LEFT":
-      // Tactonリズム: 短→長 (ト・トーー)
+      // Tactonリズム: 短→長 (ト・・トーー) 間隔広め
       await Haptics.playAHAPAsync(makeAHAP([
         continuous(0, 0.03, 0.8, 0.5),
         transient(0, 0.8, 0.5),
-        continuous(0.13, 0.15, 0.8, 0.5),
-        transient(0.13, 0.8, 0.5),
+        continuous(0.2, 0.15, 0.8, 0.5),
+        transient(0.2, 0.8, 0.5),
       ]));
       break;
 
     case "RIGHT":
-      // Tactonリズム: 長→短 (トーー・ト)
+      // Tactonリズム: 長→短 (トーー・・ト) 間隔広め
       await Haptics.playAHAPAsync(makeAHAP([
         continuous(0, 0.15, 0.8, 0.5),
         transient(0, 0.8, 0.5),
-        continuous(0.25, 0.03, 0.8, 0.5),
-        transient(0.25, 0.8, 0.5),
+        continuous(0.35, 0.03, 0.8, 0.5),
+        transient(0.35, 0.8, 0.5),
       ]));
       break;
 
