@@ -134,23 +134,18 @@ async function vibratePattern(direction, intensity) {
       break;
 
     case "GOAL":
-      // 到着パターン: 成功振動 + AudioCustomでgoal.wav再生
+      // 到着パターン: goal.wav(0.15s)を3連打 + 振動
       await Haptics.playAHAPAsync({
         Pattern: [
-          {
-            Event: {
-              Time: 0,
-              EventType: "AudioCustom",
-              EventWaveformPath: "goal.wav",
-              EventParameters: [
-                { ParameterID: "AudioVolume", ParameterValue: 1.0 },
-              ],
-            },
-          },
+          { Event: { Time: 0, EventType: "AudioCustom", EventWaveformPath: "goal.wav", EventParameters: [{ ParameterID: "AudioVolume", ParameterValue: 1.0 }] } },
           { Event: transient(0, 1.0, 0.5) },
-          { Event: continuous(0.01, 0.3, 1.0, 0.5) },
-          { Event: transient(0.15, 1.0, 0.5) },
-          { Event: transient(0.3, 1.0, 0.5) },
+          { Event: continuous(0.01, 0.14, 1.0, 0.5) },
+          { Event: { Time: 0.2, EventType: "AudioCustom", EventWaveformPath: "goal.wav", EventParameters: [{ ParameterID: "AudioVolume", ParameterValue: 1.0 }] } },
+          { Event: transient(0.2, 1.0, 0.5) },
+          { Event: continuous(0.21, 0.14, 1.0, 0.5) },
+          { Event: { Time: 0.4, EventType: "AudioCustom", EventWaveformPath: "goal.wav", EventParameters: [{ ParameterID: "AudioVolume", ParameterValue: 1.0 }] } },
+          { Event: transient(0.4, 1.0, 0.5) },
+          { Event: continuous(0.41, 0.14, 1.0, 0.5) },
         ],
       });
       break;
