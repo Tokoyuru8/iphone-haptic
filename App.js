@@ -13,6 +13,18 @@ function makeAHAP(events) {
   return { Pattern: events.map((e) => ({ Event: e })) };
 }
 
+// AudioCustomイベント: 低周波音を同期して知覚的に振動を強化
+function audioImpact(time) {
+  return {
+    Time: time,
+    EventType: "AudioCustom",
+    EventWaveformPath: "impact_bass.wav",
+    EventParameters: [
+      { ParameterID: "AudioVolume", ParameterValue: 1.0 },
+    ],
+  };
+}
+
 function transient(time, intensity, sharpness) {
   return {
     Time: time,
@@ -45,29 +57,35 @@ async function vibratePattern(direction, intensity) {
 
   switch (direction) {
     case "UP":
-      // 上昇メタファー: intensity漸増 + sharpness高(鋭い=上) + continuous裏打ち(位相ずらし)
-      await Haptics.playAHAPAsync(makeAHAP([
-        transient(0, 0.6, 1.0),
-        continuous(0.01, 0.29, 0.8, 0.8),
-        transient(0.1, 0.8, 1.0),
-        transient(0.2, 1.0, 1.0),
-      ]));
+      // 上昇メタファー: 全intensity最大 + AudioCustom同期 + sharpness高(鋭い=上)
+      await Haptics.playAHAPAsync({
+        Pattern: [
+          { Event: audioImpact(0) },
+          { Event: transient(0, 0.8, 1.0) },
+          { Event: continuous(0.01, 0.29, 1.0, 1.0) },
+          { Event: audioImpact(0.1) },
+          { Event: transient(0.1, 1.0, 1.0) },
+          { Event: audioImpact(0.2) },
+          { Event: transient(0.2, 1.0, 1.0) },
+        ],
+      });
       break;
 
     case "DOWN":
-      // 下降メタファー: 強打→減衰continuous で「落下」感 + sharpness低(重い)
+      // 下降メタファー: 強打→減衰 + AudioCustom同期 + sharpness低(重い)
       await Haptics.playAHAPAsync({
         Pattern: [
+          { Event: audioImpact(0) },
           { Event: transient(0, 1.0, 0.3) },
-          { Event: continuous(0.05, 0.35, 1.0, 0.2) },
+          { Event: continuous(0.01, 0.4, 1.0, 0.2) },
           {
             ParameterCurve: {
               ParameterID: "HapticIntensityControl",
-              Time: 0.05,
+              Time: 0.01,
               ParameterCurveControlPoints: [
                 { Time: 0, ParameterValue: 1.0 },
-                { Time: 0.15, ParameterValue: 0.5 },
-                { Time: 0.35, ParameterValue: 0.1 },
+                { Time: 0.2, ParameterValue: 0.5 },
+                { Time: 0.4, ParameterValue: 0.1 },
               ],
             },
           },
@@ -76,39 +94,53 @@ async function vibratePattern(direction, intensity) {
       break;
 
     case "LEFT":
-      // Tactonリズム: 短→長 (ト・・トーー) 位相ずらし
-      await Haptics.playAHAPAsync(makeAHAP([
-        transient(0, 0.8, 0.5),
-        continuous(0.01, 0.03, 0.8, 0.5),
-        transient(0.2, 0.8, 0.5),
-        continuous(0.21, 0.15, 0.8, 0.5),
-      ]));
+      // Tactonリズム: 短→長 + AudioCustom同期 + 全intensity最大
+      await Haptics.playAHAPAsync({
+        Pattern: [
+          { Event: audioImpact(0) },
+          { Event: transient(0, 1.0, 1.0) },
+          { Event: continuous(0.01, 0.03, 1.0, 1.0) },
+          { Event: audioImpact(0.2) },
+          { Event: transient(0.2, 1.0, 1.0) },
+          { Event: continuous(0.21, 0.15, 1.0, 1.0) },
+        ],
+      });
       break;
 
     case "RIGHT":
-      // Tactonリズム: 長→短 (トーー・・ト) 位相ずらし
-      await Haptics.playAHAPAsync(makeAHAP([
-        transient(0, 0.8, 0.5),
-        continuous(0.01, 0.15, 0.8, 0.5),
-        transient(0.35, 0.8, 0.5),
-        continuous(0.36, 0.03, 0.8, 0.5),
-      ]));
+      // Tactonリズム: 長→短 + AudioCustom同期 + 全intensity最大
+      await Haptics.playAHAPAsync({
+        Pattern: [
+          { Event: audioImpact(0) },
+          { Event: transient(0, 1.0, 1.0) },
+          { Event: continuous(0.01, 0.15, 1.0, 1.0) },
+          { Event: audioImpact(0.35) },
+          { Event: transient(0.35, 1.0, 1.0) },
+          { Event: continuous(0.36, 0.03, 1.0, 1.0) },
+        ],
+      });
       break;
 
     case "FORWARD":
     case "ALL_ON":
-      // 距離フィードバック: 強い連続振動(位相ずらし)
-      await Haptics.playAHAPAsync(makeAHAP([
-        transient(0, 1.0, 0.5),
-        continuous(0.01, 0.4, Math.max(0.5, intensity), 0.5),
-      ]));
+      // 距離フィードバック: 最大連続振動 + AudioCustom同期
+      await Haptics.playAHAPAsync({
+        Pattern: [
+          { Event: audioImpact(0) },
+          { Event: transient(0, 1.0, 1.0) },
+          { Event: continuous(0.01, 0.4, 1.0, 1.0) },
+        ],
+      });
       break;
 
     default:
-      await Haptics.playAHAPAsync(makeAHAP([
-        transient(0, 0.8, 0.5),
-        continuous(0.01, 0.2, 0.8, 0.5),
-      ]));
+      await Haptics.playAHAPAsync({
+        Pattern: [
+          { Event: audioImpact(0) },
+          { Event: transient(0, 1.0, 1.0) },
+          { Event: continuous(0.01, 0.2, 1.0, 1.0) },
+        ],
+      });
   }
 }
 
