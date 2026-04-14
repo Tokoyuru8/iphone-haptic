@@ -151,6 +151,7 @@ export default function App() {
   const [port, setPort] = useState("8765");
   const [status, setStatus] = useState("未接続");
   const [lastCommand, setLastCommand] = useState("-");
+  const [currentDir, setCurrentDir] = useState("STOP");
   const [commandCount, setCommandCount] = useState(0);
   const wsRef = useRef(null);
   const reconnectRef = useRef(null);
@@ -199,6 +200,7 @@ export default function App() {
           const intensity = data.intensity || 0;
 
           setLastCommand(`${dir} (${(intensity * 100).toFixed(0)}%)`);
+          setCurrentDir(dir);
           setCommandCount((c) => c + 1);
 
           currentDirRef.current = dir;
@@ -257,30 +259,46 @@ export default function App() {
   const statusColor =
     status === "接続済み" ? "#4CAF50" : status === "接続中..." ? "#FF9800" : "#F44336";
 
+  const dirArrow = { UP: "^", DOWN: "v", LEFT: "<", RIGHT: ">", FORWARD: "O", STOP: "-", ALL_ON: "O" };
+  const dirColor = { UP: "#4CAF50", DOWN: "#F44336", LEFT: "#2196F3", RIGHT: "#FF9800", FORWARD: "#9C27B0", STOP: "#555", ALL_ON: "#9C27B0" };
+  const dirLabel = { UP: "UP", DOWN: "DOWN", LEFT: "LEFT", RIGHT: "RIGHT", FORWARD: "FWD", STOP: "STOP", ALL_ON: "ALL" };
+
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
 
-      <Text style={styles.title}>Haptic Receiver</Text>
-
-      <View style={styles.section}>
-        <Text style={styles.label}>研究PC IP</Text>
-        <TextInput
-          style={styles.input}
-          value={serverIp}
-          onChangeText={setServerIp}
-          keyboardType="numeric"
-          editable={!isConnected}
-        />
-        <Text style={styles.label}>Port</Text>
-        <TextInput
-          style={styles.input}
-          value={port}
-          onChangeText={setPort}
-          keyboardType="numeric"
-          editable={!isConnected}
-        />
+      <View style={styles.dirBox}>
+        <Text style={[styles.dirArrow, { color: dirColor[currentDir] || "#555" }]}>
+          {dirArrow[currentDir] || "-"}
+        </Text>
+        <Text style={[styles.dirLabel, { color: dirColor[currentDir] || "#555" }]}>
+          {dirLabel[currentDir] || currentDir}
+        </Text>
       </View>
+
+      <View style={styles.statusRow}>
+        <Text style={[styles.statusDot, { color: statusColor }]}>{status}</Text>
+        <Text style={styles.info}>  {commandCount}件</Text>
+      </View>
+
+      {!isConnected && (
+        <View style={styles.section}>
+          <Text style={styles.label}>IP</Text>
+          <TextInput
+            style={styles.input}
+            value={serverIp}
+            onChangeText={setServerIp}
+            keyboardType="numeric"
+          />
+          <Text style={styles.label}>Port</Text>
+          <TextInput
+            style={styles.input}
+            value={port}
+            onChangeText={setPort}
+            keyboardType="numeric"
+          />
+        </View>
+      )}
 
       <Pressable
         style={[styles.btn, { backgroundColor: isConnected ? "#F44336" : "#2196F3" }]}
@@ -288,12 +306,6 @@ export default function App() {
       >
         <Text style={styles.btnText}>{isConnected ? "切断" : "接続"}</Text>
       </Pressable>
-
-      <View style={styles.statusBox}>
-        <Text style={[styles.statusText, { color: statusColor }]}>{status}</Text>
-        <Text style={styles.info}>最後のコマンド: {lastCommand}</Text>
-        <Text style={styles.info}>受信数: {commandCount}</Text>
-      </View>
 
       <Text style={styles.label}>振動テスト</Text>
       <View style={styles.testRow}>
@@ -319,11 +331,28 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: 20,
   },
-  title: {
-    fontSize: 28,
+  dirBox: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 20,
+  },
+  dirArrow: {
+    fontSize: 120,
     fontWeight: "bold",
-    color: "#fff",
-    marginBottom: 30,
+    lineHeight: 130,
+  },
+  dirLabel: {
+    fontSize: 32,
+    fontWeight: "bold",
+  },
+  statusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  statusDot: {
+    fontSize: 16,
+    fontWeight: "bold",
   },
   section: {
     width: "100%",
