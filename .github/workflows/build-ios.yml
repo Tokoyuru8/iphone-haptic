@@ -47,6 +47,7 @@ jobs:
           cp -r ios/build/iphonehaptic.xcarchive/Products/Applications/iphonehaptic.app build/Payload/
           # AudioCustom用の音声ファイルを.appバンドルに直接コピー
           cp assets/impact_bass.wav build/Payload/iphonehaptic.app/
+          cp assets/goal.wav build/Payload/iphonehaptic.app/
           cd build
           zip -r iphonehaptic.ipa Payload
 

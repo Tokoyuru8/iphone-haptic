@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { StyleSheet, Text, View, TextInput, Pressable, Switch } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import * as Haptics from "expo-better-haptics";
-import { Audio } from "expo-av";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -135,8 +134,25 @@ async function vibratePattern(direction, intensity) {
       break;
 
     case "GOAL":
-      // 到着パターン: iOS標準の成功フィードバック
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      // 到着パターン: 成功振動 + AudioCustomでgoal.wav再生
+      await Haptics.playAHAPAsync({
+        Pattern: [
+          {
+            Event: {
+              Time: 0,
+              EventType: "AudioCustom",
+              EventWaveformPath: "goal.wav",
+              EventParameters: [
+                { ParameterID: "AudioVolume", ParameterValue: 1.0 },
+              ],
+            },
+          },
+          { Event: transient(0, 1.0, 0.5) },
+          { Event: continuous(0.01, 0.3, 1.0, 0.5) },
+          { Event: transient(0.15, 1.0, 0.5) },
+          { Event: transient(0.3, 1.0, 0.5) },
+        ],
+      });
       break;
 
     default:
@@ -160,17 +176,6 @@ export default function App() {
   const [currentDir, setCurrentDir] = useState("STOP");
   const [commandCount, setCommandCount] = useState(0);
   const [goalSound, setGoalSound] = useState(true);
-  const goalSoundRef = useRef(null);
-
-  useEffect(() => {
-    Audio.setAudioModeAsync({ playsInSilentModeIOS: true }).catch(() => {});
-    Audio.Sound.createAsync(require("./assets/goal.wav")).then(({ sound }) => {
-      goalSoundRef.current = sound;
-    }).catch(() => {});
-    return () => {
-      if (goalSoundRef.current) goalSoundRef.current.unloadAsync();
-    };
-  }, []);
   const wsRef = useRef(null);
   const reconnectRef = useRef(null);
   const currentDirRef = useRef("STOP");
@@ -228,11 +233,12 @@ export default function App() {
             stopVibLoop();
           } else if (dir === "GOAL") {
             stopVibLoop();
-            await vibratePattern(dir, intensity);
-            if (goalSound && goalSoundRef.current) {
-              try {
-                await goalSoundRef.current.replayAsync();
-              } catch (e) {}
+            if (goalSound) {
+              // AudioCustomでgoal.wav付き振動
+              await vibratePattern("GOAL", intensity);
+            } else {
+              // 音なし: 振動のみ
+              await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             }
             await sleep(1000);
           } else {
