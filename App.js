@@ -55,13 +55,24 @@ async function vibratePattern(direction, intensity) {
       break;
 
     case "DOWN":
-      // 下降メタファー: intensity漸減 + sharpness低(丸い=下) + continuous裏打ちで体感強化
-      await Haptics.playAHAPAsync(makeAHAP([
-        continuous(0, 0.3, 0.8, 0.3),
-        transient(0, 1.0, 0.4),
-        transient(0.1, 0.8, 0.3),
-        transient(0.2, 0.6, 0.2),
-      ]));
+      // 下降メタファー: 強打→減衰continuous で「落下」感 + sharpness低(重い)
+      await Haptics.playAHAPAsync({
+        Pattern: [
+          { Event: transient(0, 1.0, 0.3) },
+          { Event: continuous(0.05, 0.35, 1.0, 0.2) },
+          {
+            ParameterCurve: {
+              ParameterID: "HapticIntensityControl",
+              Time: 0.05,
+              ParameterCurveControlPoints: [
+                { Time: 0, ParameterValue: 1.0 },
+                { Time: 0.15, ParameterValue: 0.5 },
+                { Time: 0.35, ParameterValue: 0.1 },
+              ],
+            },
+          },
+        ],
+      });
       break;
 
     case "LEFT":
