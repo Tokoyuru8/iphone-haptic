@@ -45,10 +45,10 @@ async function vibratePattern(direction, intensity) {
 
   switch (direction) {
     case "UP":
-      // 上昇メタファー: intensity漸増 + sharpness高(鋭い=上) + continuous裏打ちで体感強化
+      // 上昇メタファー: intensity漸増 + sharpness高(鋭い=上) + continuous裏打ち(位相ずらし)
       await Haptics.playAHAPAsync(makeAHAP([
-        continuous(0, 0.3, 0.8, 0.8),
         transient(0, 0.6, 1.0),
+        continuous(0.01, 0.29, 0.8, 0.8),
         transient(0.1, 0.8, 1.0),
         transient(0.2, 1.0, 1.0),
       ]));
@@ -76,38 +76,38 @@ async function vibratePattern(direction, intensity) {
       break;
 
     case "LEFT":
-      // Tactonリズム: 短→長 (ト・・トーー) 間隔広め
+      // Tactonリズム: 短→長 (ト・・トーー) 位相ずらし
       await Haptics.playAHAPAsync(makeAHAP([
-        continuous(0, 0.03, 0.8, 0.5),
         transient(0, 0.8, 0.5),
-        continuous(0.2, 0.15, 0.8, 0.5),
+        continuous(0.01, 0.03, 0.8, 0.5),
         transient(0.2, 0.8, 0.5),
+        continuous(0.21, 0.15, 0.8, 0.5),
       ]));
       break;
 
     case "RIGHT":
-      // Tactonリズム: 長→短 (トーー・・ト) 間隔広め
+      // Tactonリズム: 長→短 (トーー・・ト) 位相ずらし
       await Haptics.playAHAPAsync(makeAHAP([
-        continuous(0, 0.15, 0.8, 0.5),
         transient(0, 0.8, 0.5),
-        continuous(0.35, 0.03, 0.8, 0.5),
+        continuous(0.01, 0.15, 0.8, 0.5),
         transient(0.35, 0.8, 0.5),
+        continuous(0.36, 0.03, 0.8, 0.5),
       ]));
       break;
 
     case "FORWARD":
     case "ALL_ON":
-      // 距離フィードバック: 強い連続振動
+      // 距離フィードバック: 強い連続振動(位相ずらし)
       await Haptics.playAHAPAsync(makeAHAP([
         transient(0, 1.0, 0.5),
-        continuous(0, 0.4, Math.max(0.5, intensity), 0.5),
+        continuous(0.01, 0.4, Math.max(0.5, intensity), 0.5),
       ]));
       break;
 
     default:
       await Haptics.playAHAPAsync(makeAHAP([
         transient(0, 0.8, 0.5),
-        continuous(0, 0.2, 0.8, 0.5),
+        continuous(0.01, 0.2, 0.8, 0.5),
       ]));
   }
 }
