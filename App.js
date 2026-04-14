@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { StyleSheet, Text, View, TextInput, Pressable } from "react-native";
+import { StyleSheet, Text, View, TextInput, Pressable, Switch } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import * as Haptics from "expo-better-haptics";
+import { Audio } from "expo-av";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -158,6 +159,7 @@ export default function App() {
   const [lastCommand, setLastCommand] = useState("-");
   const [currentDir, setCurrentDir] = useState("STOP");
   const [commandCount, setCommandCount] = useState(0);
+  const [goalSound, setGoalSound] = useState(true);
   const wsRef = useRef(null);
   const reconnectRef = useRef(null);
   const currentDirRef = useRef("STOP");
@@ -216,6 +218,17 @@ export default function App() {
           } else if (dir === "GOAL") {
             stopVibLoop();
             await vibratePattern(dir, intensity);
+            if (goalSound) {
+              try {
+                const { sound } = await Audio.Sound.createAsync(
+                  require("./assets/goal.wav")
+                );
+                await sound.playAsync();
+                sound.setOnPlaybackStatusUpdate((s) => {
+                  if (s.didJustFinish) sound.unloadAsync();
+                });
+              } catch (e) {}
+            }
             await sleep(1000);
           } else {
             await vibratePattern(dir, intensity);
@@ -316,6 +329,11 @@ export default function App() {
         <Text style={styles.btnText}>{isConnected ? "切断" : "接続"}</Text>
       </Pressable>
 
+      <View style={styles.soundRow}>
+        <Text style={styles.label}>GOAL音</Text>
+        <Switch value={goalSound} onValueChange={setGoalSound} />
+      </View>
+
       <Text style={styles.label}>振動テスト</Text>
       <View style={styles.testRow}>
         {["LEFT", "RIGHT", "UP", "DOWN", "FORWARD", "GOAL"].map((dir) => (
@@ -362,6 +380,12 @@ const styles = StyleSheet.create({
   statusDot: {
     fontSize: 16,
     fontWeight: "bold",
+  },
+  soundRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 8,
   },
   section: {
     width: "100%",
