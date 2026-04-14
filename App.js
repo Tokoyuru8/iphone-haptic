@@ -36,67 +36,71 @@ function continuous(time, duration, intensity, sharpness) {
   };
 }
 
+// リズム（パルス数・間隔）で方向を区別する
+// 全て最大強度。違いは「回数」と「テンポ」
 async function vibratePattern(direction, intensity) {
   if (direction === "STOP") return;
 
-  const i = Math.max(0.5, intensity);
-
   switch (direction) {
     case "LEFT":
-      // 強い単発: Transient衝撃 + Continuous重ね
+      // 1回 長いバズ (0.6秒)
       await Haptics.playAHAPAsync(makeAHAP([
         transient(0, 1.0, 1.0),
-        continuous(0, 0.5, 1.0, 0.8),
+        continuous(0, 0.6, 1.0, 1.0),
       ]));
       break;
 
     case "RIGHT":
-      // 2連: Transient+Continuous x2
+      // 2回 短いバズ (トッ・トッ)
       await Haptics.playAHAPAsync(makeAHAP([
         transient(0, 1.0, 1.0),
-        continuous(0, 0.3, 1.0, 0.8),
-        transient(0.5, 1.0, 1.0),
-        continuous(0.5, 0.3, 1.0, 0.8),
+        continuous(0, 0.15, 1.0, 1.0),
+        transient(0.4, 1.0, 1.0),
+        continuous(0.4, 0.15, 1.0, 1.0),
       ]));
       break;
 
     case "UP":
-      // 上昇: 弱→中→強
+      // 3回 速いパルス (トトト)
       await Haptics.playAHAPAsync(makeAHAP([
-        transient(0, 0.3, 0.3),
-        continuous(0, 0.2, 0.3, 0.3),
-        transient(0.35, 0.6, 0.6),
-        continuous(0.35, 0.2, 0.6, 0.5),
-        transient(0.7, 1.0, 1.0),
-        continuous(0.7, 0.3, 1.0, 1.0),
+        transient(0, 1.0, 1.0),
+        continuous(0, 0.1, 1.0, 1.0),
+        transient(0.2, 1.0, 1.0),
+        continuous(0.2, 0.1, 1.0, 1.0),
+        transient(0.4, 1.0, 1.0),
+        continuous(0.4, 0.1, 1.0, 1.0),
       ]));
       break;
 
     case "DOWN":
-      // 下降: 強→中→弱
+      // 1回 超長いバズ (1.2秒) -- LEFTの2倍の長さで明確に区別
       await Haptics.playAHAPAsync(makeAHAP([
-        transient(0, 1.0, 1.0),
-        continuous(0, 0.3, 1.0, 1.0),
-        transient(0.45, 0.6, 0.6),
-        continuous(0.45, 0.2, 0.6, 0.5),
-        transient(0.8, 0.3, 0.3),
-        continuous(0.8, 0.2, 0.3, 0.3),
+        transient(0, 1.0, 0.3),
+        continuous(0, 1.2, 1.0, 0.3),
       ]));
       break;
 
     case "FORWARD":
     case "ALL_ON":
-      // 最大持続振動
+      // 連続パルス (トトトトト) 5回高速
       await Haptics.playAHAPAsync(makeAHAP([
-        transient(0, 1.0, 0.5),
-        continuous(0, 0.5, i, 0.5),
+        transient(0, 1.0, 0.7),
+        continuous(0, 0.08, 1.0, 0.7),
+        transient(0.13, 1.0, 0.7),
+        continuous(0.13, 0.08, 1.0, 0.7),
+        transient(0.26, 1.0, 0.7),
+        continuous(0.26, 0.08, 1.0, 0.7),
+        transient(0.39, 1.0, 0.7),
+        continuous(0.39, 0.08, 1.0, 0.7),
+        transient(0.52, 1.0, 0.7),
+        continuous(0.52, 0.08, 1.0, 0.7),
       ]));
       break;
 
     default:
       await Haptics.playAHAPAsync(makeAHAP([
-        transient(0, 1.0, 0.5),
-        continuous(0, 0.3, i, 0.5),
+        transient(0, 1.0, 1.0),
+        continuous(0, 0.3, 1.0, 1.0),
       ]));
   }
 }
