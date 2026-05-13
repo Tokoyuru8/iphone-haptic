@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { StyleSheet, Text, View, TextInput, Pressable, Switch } from "react-native";
+import { StyleSheet, Text, View, TextInput, Pressable, Switch, Share, ScrollView } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import * as Haptics from "expo-better-haptics";
 
@@ -161,9 +161,39 @@ async function vibratePattern(direction, intensity) {
   }
 }
 
+// --- 振動間隔予備実験ユーティリティ（Phase 1） ---
+// 4方向 × 3間隔（200/500/1000ms）× 3反復 = 36試行をシャッフルして提示し、
+// 被験者は無音区間の長さを「短/中/長」の3択で回答する3AFC形式
+const EXP_DIRECTIONS = ["UP", "DOWN", "LEFT", "RIGHT"];
+const EXP_INTERVALS = [200, 500, 1000];
+const EXP_REPS = 3;
+
+function buildTrials() {
+  const list = [];
+  for (const d of EXP_DIRECTIONS) {
+    for (const i of EXP_INTERVALS) {
+      for (let r = 0; r < EXP_REPS; r++) list.push({ direction: d, interval_ms: i });
+    }
+  }
+  for (let i = list.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [list[i], list[j]] = [list[j], list[i]];
+  }
+  return list;
+}
+
+const intervalLabel = (ms) => (ms === 200 ? "短" : ms === 500 ? "中" : "長");
+
+async function experimentTrial(direction, intervalMs) {
+  await vibratePattern(direction, 1.0);
+  await sleep(intervalMs);
+  await vibratePattern(direction, 1.0);
+}
+
 // --- メインアプリ ---
 
 export default function App() {
+  const [mode, setMode] = useState("test");
   const [serverIp, setServerIp] = useState("192.168.1.204");
   const [port, setPort] = useState("8765");
   const [status, setStatus] = useState("未接続");
@@ -176,6 +206,15 @@ export default function App() {
   const currentDirRef = useRef("STOP");
   const currentIntRef = useRef(0);
   const loopRef = useRef(null);
+
+  // 実験モード用 state
+  const [subjectId, setSubjectId] = useState("");
+  const [trials, setTrials] = useState([]);
+  const [trialIndex, setTrialIndex] = useState(0);
+  const [responses, setResponses] = useState([]);
+  const [expPhase, setExpPhase] = useState("setup"); // setup | calibration | running | done
+  const [isPlaying, setIsPlaying] = useState(false);
+  const rtStartRef = useRef(0);
 
   const startVibLoop = useCallback(() => {
     if (loopRef.current) return;
@@ -281,6 +320,87 @@ export default function App() {
     await vibratePattern(dir, 1.0);
   };
 
+  // --- 実験モード制御 ---
+
+  const runCalibration = useCallback(async () => {
+    setExpPhase("calibration");
+    for (const ms of EXP_INTERVALS) {
+      await experimentTrial("UP", ms);
+      await sleep(1200);
+    }
+    setExpPhase("setup");
+  }, []);
+
+  const startExperiment = useCallback(() => {
+    if (!subjectId.trim()) return;
+    setTrials(buildTrials());
+    setTrialIndex(0);
+    setResponses([]);
+    setExpPhase("running");
+  }, [subjectId]);
+
+  const playCurrentTrial = useCallback(async () => {
+    if (trialIndex >= trials.length) return;
+    const t = trials[trialIndex];
+    setIsPlaying(true);
+    await experimentTrial(t.direction, t.interval_ms);
+    rtStartRef.current = Date.now();
+    setIsPlaying(false);
+  }, [trials, trialIndex]);
+
+  useEffect(() => {
+    if (expPhase === "running" && trials.length > 0 && trialIndex < trials.length) {
+      playCurrentTrial();
+    }
+  }, [expPhase, trialIndex, trials.length, playCurrentTrial]);
+
+  const onResponse = useCallback(
+    (resp) => {
+      if (isPlaying) return;
+      const t = trials[trialIndex];
+      if (!t) return;
+      const rt = Date.now() - rtStartRef.current;
+      const rec = {
+        subject: subjectId,
+        trial: trialIndex + 1,
+        direction: t.direction,
+        interval_ms: t.interval_ms,
+        response: resp,
+        correct: resp === intervalLabel(t.interval_ms),
+        rt_ms: rt,
+        ts: new Date().toISOString(),
+      };
+      setResponses((prev) => [...prev, rec]);
+      if (trialIndex + 1 >= trials.length) {
+        setExpPhase("done");
+      } else {
+        setTrialIndex(trialIndex + 1);
+      }
+    },
+    [isPlaying, trials, trialIndex, subjectId]
+  );
+
+  const replayCurrent = useCallback(async () => {
+    if (isPlaying) return;
+    await playCurrentTrial();
+  }, [isPlaying, playCurrentTrial]);
+
+  const shareResults = useCallback(async () => {
+    const jsonl = responses.map((r) => JSON.stringify(r)).join("\n");
+    const correctN = responses.filter((r) => r.correct).length;
+    const summary = `iphone-haptic 予備実験結果\n被験者: ${subjectId}\n試行: ${responses.length}\n正答率: ${((correctN / responses.length) * 100).toFixed(1)}%\n\n${jsonl}`;
+    await Share.share({ message: summary });
+  }, [responses, subjectId]);
+
+  const resetExperiment = useCallback(() => {
+    setSubjectId("");
+    setTrials([]);
+    setTrialIndex(0);
+    setResponses([]);
+    setExpPhase("setup");
+    setIsPlaying(false);
+  }, []);
+
   const isConnected = status === "接続済み";
   const statusColor =
     status === "接続済み" ? "#4CAF50" : status === "接続中..." ? "#FF9800" : "#F44336";
@@ -289,67 +409,168 @@ export default function App() {
   const dirColor = { UP: "#4CAF50", DOWN: "#F44336", LEFT: "#2196F3", RIGHT: "#FF9800", FORWARD: "#9C27B0", STOP: "#555", ALL_ON: "#9C27B0", GOAL: "#FFD700" };
   const dirLabel = { UP: "UP", DOWN: "DOWN", LEFT: "LEFT", RIGHT: "RIGHT", FORWARD: "FWD", STOP: "STOP", ALL_ON: "ALL", GOAL: "GOAL!" };
 
+  const correctCount = responses.filter((r) => r.correct).length;
+  const accuracy = responses.length > 0 ? ((correctCount / responses.length) * 100).toFixed(1) : "0.0";
+
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
 
-      <View style={styles.dirBox}>
-        <Text style={[styles.dirArrow, { color: dirColor[currentDir] || "#555" }]}>
-          {dirArrow[currentDir] || "-"}
-        </Text>
-        <Text style={[styles.dirLabel, { color: dirColor[currentDir] || "#555" }]}>
-          {dirLabel[currentDir] || currentDir}
-        </Text>
+      <View style={styles.modeRow}>
+        <Pressable
+          style={[styles.modeBtn, mode === "test" && styles.modeBtnActive]}
+          onPress={() => setMode("test")}
+        >
+          <Text style={[styles.modeBtnText, mode === "test" && styles.modeBtnTextActive]}>テスト</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.modeBtn, mode === "experiment" && styles.modeBtnActive]}
+          onPress={() => setMode("experiment")}
+        >
+          <Text style={[styles.modeBtnText, mode === "experiment" && styles.modeBtnTextActive]}>実験</Text>
+        </Pressable>
       </View>
 
-      <View style={styles.statusRow}>
-        <Text style={[styles.statusDot, { color: statusColor }]}>{status}</Text>
-        <Text style={styles.info}>  {commandCount}件</Text>
-      </View>
+      {mode === "test" ? (
+        <>
+          <View style={styles.dirBox}>
+            <Text style={[styles.dirArrow, { color: dirColor[currentDir] || "#555" }]}>
+              {dirArrow[currentDir] || "-"}
+            </Text>
+            <Text style={[styles.dirLabel, { color: dirColor[currentDir] || "#555" }]}>
+              {dirLabel[currentDir] || currentDir}
+            </Text>
+          </View>
 
-      {!isConnected && (
-        <View style={styles.section}>
-          <Text style={styles.label}>IP</Text>
-          <TextInput
-            style={styles.input}
-            value={serverIp}
-            onChangeText={setServerIp}
-            keyboardType="numeric"
-          />
-          <Text style={styles.label}>Port</Text>
-          <TextInput
-            style={styles.input}
-            value={port}
-            onChangeText={setPort}
-            keyboardType="numeric"
-          />
-        </View>
-      )}
+          <View style={styles.statusRow}>
+            <Text style={[styles.statusDot, { color: statusColor }]}>{status}</Text>
+            <Text style={styles.info}>  {commandCount}件</Text>
+          </View>
 
-      <Pressable
-        style={[styles.btn, { backgroundColor: isConnected ? "#F44336" : "#2196F3" }]}
-        onPress={isConnected ? disconnect : connect}
-      >
-        <Text style={styles.btnText}>{isConnected ? "切断" : "接続"}</Text>
-      </Pressable>
+          {!isConnected && (
+            <View style={styles.section}>
+              <Text style={styles.label}>IP</Text>
+              <TextInput
+                style={styles.input}
+                value={serverIp}
+                onChangeText={setServerIp}
+                keyboardType="numeric"
+              />
+              <Text style={styles.label}>Port</Text>
+              <TextInput
+                style={styles.input}
+                value={port}
+                onChangeText={setPort}
+                keyboardType="numeric"
+              />
+            </View>
+          )}
 
-      <View style={styles.soundRow}>
-        <Text style={styles.label}>GOAL音</Text>
-        <Switch value={goalSound} onValueChange={setGoalSound} />
-      </View>
-
-      <Text style={styles.label}>振動テスト</Text>
-      <View style={styles.testRow}>
-        {["LEFT", "RIGHT", "UP", "DOWN", "FORWARD", "GOAL"].map((dir) => (
           <Pressable
-            key={dir}
-            style={styles.testBtn}
-            onPress={() => testVibration(dir)}
+            style={[styles.btn, { backgroundColor: isConnected ? "#F44336" : "#2196F3" }]}
+            onPress={isConnected ? disconnect : connect}
           >
-            <Text style={styles.testBtnText}>{dir}</Text>
+            <Text style={styles.btnText}>{isConnected ? "切断" : "接続"}</Text>
           </Pressable>
-        ))}
-      </View>
+
+          <View style={styles.soundRow}>
+            <Text style={styles.label}>GOAL音</Text>
+            <Switch value={goalSound} onValueChange={setGoalSound} />
+          </View>
+
+          <Text style={styles.label}>振動テスト</Text>
+          <View style={styles.testRow}>
+            {["LEFT", "RIGHT", "UP", "DOWN", "FORWARD", "GOAL"].map((dir) => (
+              <Pressable
+                key={dir}
+                style={styles.testBtn}
+                onPress={() => testVibration(dir)}
+              >
+                <Text style={styles.testBtnText}>{dir}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </>
+      ) : (
+        <ScrollView contentContainerStyle={styles.expScroll} keyboardShouldPersistTaps="handled">
+          <Text style={styles.expTitle}>振動間隔 予備実験</Text>
+
+          {expPhase === "setup" && (
+            <>
+              <Text style={styles.label}>被験者ID</Text>
+              <TextInput
+                style={styles.input}
+                value={subjectId}
+                onChangeText={setSubjectId}
+                placeholder="例: S01"
+                placeholderTextColor="#666"
+                autoCapitalize="characters"
+              />
+              <Text style={styles.expHint}>
+                4方向 × 3間隔（200/500/1000ms）× 3反復 = 36試行{"\n"}
+                振動が2回流れ、その間の無音区間を「短/中/長」で回答する
+              </Text>
+              <Pressable style={[styles.btn, { backgroundColor: "#607D8B" }]} onPress={runCalibration}>
+                <Text style={styles.btnText}>キャリブレーション（短→中→長）</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.btn, { backgroundColor: subjectId.trim() ? "#2196F3" : "#444" }]}
+                onPress={startExperiment}
+                disabled={!subjectId.trim()}
+              >
+                <Text style={styles.btnText}>実験開始</Text>
+              </Pressable>
+            </>
+          )}
+
+          {expPhase === "calibration" && (
+            <Text style={styles.expBig}>キャリブレーション中...</Text>
+          )}
+
+          {expPhase === "running" && trials[trialIndex] && (
+            <>
+              <Text style={styles.expProgress}>
+                {trialIndex + 1} / {trials.length}
+              </Text>
+              <Text style={styles.expBig}>{isPlaying ? "振動再生中..." : "回答してください"}</Text>
+              <View style={styles.answerRow}>
+                {["短", "中", "長"].map((r) => (
+                  <Pressable
+                    key={r}
+                    style={[styles.answerBtn, isPlaying && styles.answerBtnDisabled]}
+                    onPress={() => onResponse(r)}
+                    disabled={isPlaying}
+                  >
+                    <Text style={styles.answerBtnText}>{r}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Pressable
+                style={[styles.btn, { backgroundColor: "#555" }]}
+                onPress={replayCurrent}
+                disabled={isPlaying}
+              >
+                <Text style={styles.btnText}>再生し直す</Text>
+              </Pressable>
+            </>
+          )}
+
+          {expPhase === "done" && (
+            <>
+              <Text style={styles.expBig}>完了</Text>
+              <Text style={styles.expProgress}>
+                正答 {correctCount} / {responses.length}（{accuracy}%）
+              </Text>
+              <Pressable style={[styles.btn, { backgroundColor: "#4CAF50" }]} onPress={shareResults}>
+                <Text style={styles.btnText}>結果を共有（JSONL）</Text>
+              </Pressable>
+              <Pressable style={[styles.btn, { backgroundColor: "#666" }]} onPress={resetExperiment}>
+                <Text style={styles.btnText}>新しい被験者で再実施</Text>
+              </Pressable>
+            </>
+          )}
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -454,6 +675,89 @@ const styles = StyleSheet.create({
   testBtnText: {
     color: "#fff",
     fontSize: 14,
+    fontWeight: "bold",
+  },
+  modeRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 16,
+    width: "100%",
+  },
+  modeBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: "#16213e",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#0f3460",
+  },
+  modeBtnActive: {
+    backgroundColor: "#2196F3",
+    borderColor: "#2196F3",
+  },
+  modeBtnText: {
+    color: "#aaa",
+    fontSize: 14,
+    fontWeight: "bold",
+  },
+  modeBtnTextActive: {
+    color: "#fff",
+  },
+  expScroll: {
+    width: "100%",
+    paddingVertical: 8,
+  },
+  expTitle: {
+    color: "#fff",
+    fontSize: 22,
+    fontWeight: "bold",
+    marginBottom: 16,
+    textAlign: "center",
+  },
+  expHint: {
+    color: "#aaa",
+    fontSize: 13,
+    lineHeight: 20,
+    marginVertical: 12,
+  },
+  expProgress: {
+    color: "#ccc",
+    fontSize: 18,
+    fontWeight: "bold",
+    textAlign: "center",
+    marginVertical: 8,
+  },
+  expBig: {
+    color: "#fff",
+    fontSize: 28,
+    fontWeight: "bold",
+    textAlign: "center",
+    marginVertical: 20,
+  },
+  answerRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginVertical: 16,
+    justifyContent: "center",
+  },
+  answerBtn: {
+    flex: 1,
+    paddingVertical: 28,
+    backgroundColor: "#0f3460",
+    borderRadius: 12,
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#2196F3",
+  },
+  answerBtnDisabled: {
+    backgroundColor: "#222",
+    borderColor: "#444",
+    opacity: 0.4,
+  },
+  answerBtnText: {
+    color: "#fff",
+    fontSize: 28,
     fontWeight: "bold",
   },
 });
