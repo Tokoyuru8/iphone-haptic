@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { StyleSheet, Text, View, TextInput, Pressable, Switch, Share, ScrollView } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import * as Haptics from "expo-better-haptics";
+// 音声ハイブリッド誘導（2026-07-10、6/15面談で先生と合意した方式）: 到達・モード切替は音声で通知
+import * as Speech from "expo-speech";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -252,7 +254,10 @@ export default function App() {
     ws.onmessage = async (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (data.type === "vibrate") {
+        if (data.type === "speak") {
+          // 音声ハイブリッド誘導: 到達・モード切替の通知用。振動ループとは独立に発話するだけ
+          Speech.speak(data.text, { language: "ja-JP" });
+        } else if (data.type === "vibrate") {
           const dir = data.direction || "STOP";
           const intensity = data.intensity || 0;
 
