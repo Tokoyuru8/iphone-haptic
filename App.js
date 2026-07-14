@@ -218,6 +218,9 @@ export default function App() {
   const [confirmTranscript, setConfirmTranscript] = useState("");
   const confirmTranscriptRef = useRef("");
 
+  // ターゲット商品表示用 state（2026-07-14）
+  const [targetName, setTargetName] = useState("");
+
   // 実験モード用 state
   const [subjectId, setSubjectId] = useState("");
   const [trials, setTrials] = useState([]);
@@ -266,6 +269,9 @@ export default function App() {
         if (data.type === "speak") {
           // 音声ハイブリッド誘導: 到達・モード切替の通知用。振動ループとは独立に発話するだけ
           Speech.speak(data.text, { language: "ja-JP" });
+        } else if (data.type === "target_set") {
+          // ターゲット商品確定の画面表示（2026-07-14）
+          setTargetName(data.name || "");
         } else if (data.type === "confirm") {
           // 容量ファミリー確認（2026-07-14）: 質問を読み上げ、読み終わったら音声認識を開始する
           const promptText = data.prompt_text || "";
@@ -382,6 +388,12 @@ export default function App() {
   useSpeechRecognitionEvent("end", () => {
     setConfirmListening(false);
     setConfirmActive(false);
+    // オーディオ出力先を復元(2026-07-14): STT開始時にdefaultToSpeakerへ切り替えたままだと
+    // 以降のSpeech.speak(方向案内・到達通知)が本体スピーカーに出てイヤホンで聞こえなくなるため
+    ExpoSpeechRecognitionModule.setCategoryIOS({
+      category: "playAndRecord",
+      categoryOptions: ["allowBluetooth", "allowBluetoothA2DP"],
+    });
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(
         JSON.stringify({ type: "confirm_response", text: confirmTranscriptRef.current })
@@ -392,6 +404,11 @@ export default function App() {
   useSpeechRecognitionEvent("error", () => {
     setConfirmListening(false);
     setConfirmActive(false);
+    // オーディオ出力先を復元(2026-07-14): "end"と同様の理由
+    ExpoSpeechRecognitionModule.setCategoryIOS({
+      category: "playAndRecord",
+      categoryOptions: ["allowBluetooth", "allowBluetoothA2DP"],
+    });
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: "confirm_response", text: "" }));
     }
@@ -514,6 +531,13 @@ export default function App() {
 
       {mode === "test" ? (
         <>
+          {targetName ? (
+            <View style={styles.targetBox}>
+              <Text style={styles.targetLabel}>ターゲット商品</Text>
+              <Text style={styles.targetName}>{targetName}</Text>
+            </View>
+          ) : null}
+
           <View style={styles.dirBox}>
             <Text style={[styles.dirArrow, { color: dirColor[currentDir] || "#555" }]}>
               {dirArrow[currentDir] || "-"}
@@ -704,6 +728,27 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 10,
     marginBottom: 8,
+  },
+  targetBox: {
+    backgroundColor: "#16213e",
+    width: "100%",
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#2196F3",
+    alignItems: "center",
+  },
+  targetLabel: {
+    color: "#888",
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  targetName: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "bold",
+    textAlign: "center",
   },
   confirmBox: {
     backgroundColor: "#16213e",
