@@ -198,7 +198,7 @@ async function experimentTrial(direction, intervalMs) {
 
 export default function App() {
   const [mode, setMode] = useState("test");
-  const [serverIp, setServerIp] = useState("192.168.1.204");
+  const [serverIp, setServerIp] = useState("192.168.1.85");
   const [port, setPort] = useState("8765");
   const [status, setStatus] = useState("未接続");
   const [lastCommand, setLastCommand] = useState("-");
@@ -269,6 +269,7 @@ export default function App() {
         } else if (data.type === "confirm") {
           // 容量ファミリー確認（2026-07-14）: 質問を読み上げ、読み終わったら音声認識を開始する
           const promptText = data.prompt_text || "";
+          const hintWords = data.hint_words || [];
           confirmTranscriptRef.current = "";
           setConfirmTranscript("");
           setConfirmPromptText(promptText);
@@ -281,6 +282,9 @@ export default function App() {
                 lang: "ja-JP",
                 interimResults: true,
                 continuous: false,
+                // 数字の聞き取り精度向上(2026-07-14): 「5グラム」が「小グラム」に誤認識される
+                // 問題があったため、候補語をヒントとして渡す(iOS SFSpeechRecognitionRequest.contextualStrings)
+                contextualStrings: hintWords,
               });
             },
           });
