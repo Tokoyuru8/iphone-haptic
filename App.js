@@ -276,7 +276,7 @@ export default function App() {
           Speech.speak(promptText, {
             language: "ja-JP",
             onDone: () => {
-              setConfirmListening(true);
+              // 聞き取り中フラグ・合図音は"start"イベント側で確実に発火させる(下記useSpeechRecognitionEvent参照)
               ExpoSpeechRecognitionModule.start({
                 lang: "ja-JP",
                 interimResults: true,
@@ -352,6 +352,12 @@ export default function App() {
   useEffect(() => {
     ExpoSpeechRecognitionModule.requestPermissionsAsync();
   }, []);
+
+  useSpeechRecognitionEvent("start", () => {
+    // 音声認識が実際に開始したタイミングで合図(振動+通知音)と表示を確実に切り替える(2026-07-14)
+    setConfirmListening(true);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+  });
 
   useSpeechRecognitionEvent("result", (event) => {
     const transcript = event.results?.[0]?.transcript || "";
