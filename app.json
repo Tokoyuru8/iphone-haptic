@@ -16,7 +16,11 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.tokoyuru.iphonehaptic",
       "infoPlist": {
-        "UIBackgroundModes": ["audio"]
+        "UIBackgroundModes": [
+          "audio",
+          "audio"
+        ],
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -30,7 +34,20 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-build-properties"
-    ]
+      "expo-build-properties",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "容量確認の音声回答にマイクを使用します",
+          "speechRecognitionPermission": "容量確認の音声回答を認識するために使用します"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "193cb247-bcf7-48c8-8b8b-e830b3ebbcab"
+      }
+    },
+    "owner": "tokoyuru"
   }
 }

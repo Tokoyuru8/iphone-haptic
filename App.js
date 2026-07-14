@@ -4,6 +4,8 @@ import { StatusBar } from "expo-status-bar";
 import * as Haptics from "expo-better-haptics";
 // 音声ハイブリッド誘導（2026-07-10、6/15面談で先生と合意した方式）: 到達・モード切替は音声で通知
 import * as Speech from "expo-speech";
+// 容量ファミリー確認（2026-07-14）: 音声入力段の容量違い確認用（設計: product-family-resolution-202607.md）
+import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-speech-recognition";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -209,6 +211,13 @@ export default function App() {
   const currentIntRef = useRef(0);
   const loopRef = useRef(null);
 
+  // 容量ファミリー確認用 state（2026-07-14）
+  const [confirmActive, setConfirmActive] = useState(false);
+  const [confirmPromptText, setConfirmPromptText] = useState("");
+  const [confirmListening, setConfirmListening] = useState(false);
+  const [confirmTranscript, setConfirmTranscript] = useState("");
+  const confirmTranscriptRef = useRef("");
+
   // 実験モード用 state
   const [subjectId, setSubjectId] = useState("");
   const [trials, setTrials] = useState([]);
@@ -257,6 +266,24 @@ export default function App() {
         if (data.type === "speak") {
           // 音声ハイブリッド誘導: 到達・モード切替の通知用。振動ループとは独立に発話するだけ
           Speech.speak(data.text, { language: "ja-JP" });
+        } else if (data.type === "confirm") {
+          // 容量ファミリー確認（2026-07-14）: 質問を読み上げ、読み終わったら音声認識を開始する
+          const promptText = data.prompt_text || "";
+          confirmTranscriptRef.current = "";
+          setConfirmTranscript("");
+          setConfirmPromptText(promptText);
+          setConfirmActive(true);
+          Speech.speak(promptText, {
+            language: "ja-JP",
+            onDone: () => {
+              setConfirmListening(true);
+              ExpoSpeechRecognitionModule.start({
+                lang: "ja-JP",
+                interimResults: true,
+                continuous: false,
+              });
+            },
+          });
         } else if (data.type === "vibrate") {
           const dir = data.direction || "STOP";
           const intensity = data.intensity || 0;
@@ -320,6 +347,35 @@ export default function App() {
       disconnect();
     };
   }, [disconnect]);
+
+  // 容量ファミリー確認用の音声認識（2026-07-14）
+  useEffect(() => {
+    ExpoSpeechRecognitionModule.requestPermissionsAsync();
+  }, []);
+
+  useSpeechRecognitionEvent("result", (event) => {
+    const transcript = event.results?.[0]?.transcript || "";
+    confirmTranscriptRef.current = transcript;
+    setConfirmTranscript(transcript);
+  });
+
+  useSpeechRecognitionEvent("end", () => {
+    setConfirmListening(false);
+    setConfirmActive(false);
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({ type: "confirm_response", text: confirmTranscriptRef.current })
+      );
+    }
+  });
+
+  useSpeechRecognitionEvent("error", () => {
+    setConfirmListening(false);
+    setConfirmActive(false);
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "confirm_response", text: "" }));
+    }
+  });
 
   const testVibration = async (dir) => {
     await vibratePattern(dir, 1.0);
@@ -451,6 +507,18 @@ export default function App() {
             <Text style={[styles.statusDot, { color: statusColor }]}>{status}</Text>
             <Text style={styles.info}>  {commandCount}件</Text>
           </View>
+
+          {confirmActive && (
+            <View style={styles.confirmBox}>
+              <Text style={styles.confirmText}>{confirmPromptText}</Text>
+              <Text style={styles.confirmStatus}>
+                {confirmListening ? "聞き取り中..." : "読み上げ中..."}
+              </Text>
+              {confirmTranscript ? (
+                <Text style={styles.confirmTranscript}>認識: {confirmTranscript}</Text>
+              ) : null}
+            </View>
+          )}
 
           {!isConnected && (
             <View style={styles.section}>
@@ -616,6 +684,30 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 10,
     marginBottom: 8,
+  },
+  confirmBox: {
+    backgroundColor: "#16213e",
+    width: "100%",
+    padding: 16,
+    borderRadius: 8,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: "#FF9800",
+  },
+  confirmText: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "bold",
+    marginBottom: 6,
+  },
+  confirmStatus: {
+    color: "#FF9800",
+    fontSize: 14,
+  },
+  confirmTranscript: {
+    color: "#ccc",
+    fontSize: 14,
+    marginTop: 6,
   },
   section: {
     width: "100%",
