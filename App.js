@@ -285,6 +285,12 @@ export default function App() {
                 // 数字の聞き取り精度向上(2026-07-14): 「5グラム」が「小グラム」に誤認識される
                 // 問題があったため、候補語をヒントとして渡す(iOS SFSpeechRecognitionRequest.contextualStrings)
                 contextualStrings: hintWords,
+                // Bluetoothイヤホン使用時の音質劣化対策(2026-07-14): allowBluetoothを含めず
+                // 本体マイクを使わせることで、通話用低品質マイクによる誤認識を防ぐ
+                iosCategory: {
+                  category: "playAndRecord",
+                  categoryOptions: ["defaultToSpeaker"],
+                },
               });
             },
           });
