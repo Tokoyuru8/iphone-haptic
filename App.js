@@ -357,6 +357,10 @@ export default function App() {
     // 音声認識が実際に開始したタイミングで合図(振動+通知音)と表示を確実に切り替える(2026-07-14)
     setConfirmListening(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    // タイムアウトの起点をTTS再生完了後(=STT開始時)にするため、Jetson側に開始を通知(2026-07-14)
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "confirm_listening_started" }));
+    }
   });
 
   useSpeechRecognitionEvent("result", (event) => {
