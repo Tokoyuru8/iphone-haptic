@@ -249,7 +249,17 @@ export default function App() {
   }, []);
 
   const connect = useCallback(() => {
+    // 再接続タイマーの取りこぼし対策(2026-07-15): 予約済みタイマーを必ず消してから接続する。
+    // 消さないと「迷子タイマー→connect→生きた接続をclose→oncloseが次のタイマーを予約→…」の
+    // 3秒周期の自走切断ループが発生する(研究室で実測: 6分間に108回切断、close_code=1000)
+    if (reconnectRef.current) {
+      clearTimeout(reconnectRef.current);
+      reconnectRef.current = null;
+    }
     if (wsRef.current) {
+      // 旧ソケットのハンドラを外してから閉じる: 旧ソケット由来の再接続タイマーを作らせない
+      wsRef.current.onclose = null;
+      wsRef.current.onerror = null;
       wsRef.current.close();
     }
 
@@ -336,8 +346,12 @@ export default function App() {
     };
 
     ws.onclose = () => {
+      // 自分が現役ソケットでない(既に置き換え済み)場合は何もしない(2026-07-15):
+      // 古いソケットのoncloseが再接続タイマーを積むと自走切断ループの種になる
+      if (wsRef.current !== ws) return;
       setStatus("切断");
       stopVibLoop();
+      if (reconnectRef.current) clearTimeout(reconnectRef.current);
       reconnectRef.current = setTimeout(() => connect(), 3000);
     };
 
