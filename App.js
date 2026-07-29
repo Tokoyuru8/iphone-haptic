@@ -9,6 +9,41 @@ import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-spe
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// 発話前のオーディオ出力先強制復元(2026-07-29): STT終了が"end"/"error"イベントを
+// 経由しない(タイムアウト等)場合、playAndRecordカテゴリのまま固定され、TTSが
+// 通話音量ライン扱いになって音量が小さくなる不具合があったための保険
+//
+// 2026-07-29 修正: 下記の旧実装は「復元」になっておらず、逆に音量低下の原因だったので無効化する。
+//   (1) setCategoryIOS は mode も同時に設定するが、省略すると既定値 .measurement が入る
+//       (expo-speech-recognition ios/SpeechRecognitionOptions.swift:191)。measurement は
+//       録音を素の信号で取るためのモードで、出力側の信号処理も切るため再生音量が落ちる。
+//   (2) playAndRecord + allowBluetooth は Bluetooth 機器を通話用 HFP で掴むため、TTS が
+//       メディア音量ではなく通話音量ラインに乗ってしまう。
+//   (3) STT 開始時に setActive(true) されたセッションはライブラリ側で setActive(false)
+//       されない (ExpoSpeechRecognizer.swift の stopListening はエンジンを止めるだけ)。
+//       このため STT を一度も通していない初回発話だけ既定ルートで大きく鳴り、
+//       2回目以降が小さくなるという症状になっていた。
+// function restoreSpeechAudioCategory() {
+//   ExpoSpeechRecognitionModule.setCategoryIOS({
+//     category: "playAndRecord",
+//     categoryOptions: ["allowBluetooth", "allowBluetoothA2DP"],
+//   });
+// }
+
+// TTS 再生用のオーディオ設定(2026-07-29): 入力を伴わない playback カテゴリに切り替えて
+// メディア音量ラインに戻す。playback なら Bluetooth 機器へは高音質の A2DP で自動的に
+// 出力されるため allowBluetooth(HFP) を付ける必要がない。mode も明示的に default へ
+// 戻し、STT が残していく measurement の信号処理抑制を解除する。
+// STT 側は start() の iosCategory で playAndRecord に切り替わるので、ここで playback に
+// してもマイクは使えなくならない。
+function restoreSpeechAudioCategory() {
+  ExpoSpeechRecognitionModule.setCategoryIOS({
+    category: "playback",
+    categoryOptions: [],
+    mode: "default",
+  });
+}
+
 // --- 振動パターン定義 ---
 // Core Haptics: vibrateAsync / playContinuousAsync で強度・シャープネス・長さを制御
 
@@ -278,6 +313,7 @@ export default function App() {
         const data = JSON.parse(event.data);
         if (data.type === "speak") {
           // 音声ハイブリッド誘導: 到達・モード切替の通知用。振動ループとは独立に発話するだけ
+          restoreSpeechAudioCategory();
           Speech.speak(data.text, { language: "ja-JP" });
         } else if (data.type === "target_set") {
           // ターゲット商品確定の画面表示（2026-07-14）
@@ -290,6 +326,7 @@ export default function App() {
           setConfirmTranscript("");
           setConfirmPromptText(promptText);
           setConfirmActive(true);
+          restoreSpeechAudioCategory();
           Speech.speak(promptText, {
             language: "ja-JP",
             onDone: () => {
@@ -404,10 +441,7 @@ export default function App() {
     setConfirmActive(false);
     // オーディオ出力先を復元(2026-07-14): STT開始時にdefaultToSpeakerへ切り替えたままだと
     // 以降のSpeech.speak(方向案内・到達通知)が本体スピーカーに出てイヤホンで聞こえなくなるため
-    ExpoSpeechRecognitionModule.setCategoryIOS({
-      category: "playAndRecord",
-      categoryOptions: ["allowBluetooth", "allowBluetoothA2DP"],
-    });
+    restoreSpeechAudioCategory();
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(
         JSON.stringify({ type: "confirm_response", text: confirmTranscriptRef.current })
@@ -419,10 +453,7 @@ export default function App() {
     setConfirmListening(false);
     setConfirmActive(false);
     // オーディオ出力先を復元(2026-07-14): "end"と同様の理由
-    ExpoSpeechRecognitionModule.setCategoryIOS({
-      category: "playAndRecord",
-      categoryOptions: ["allowBluetooth", "allowBluetoothA2DP"],
-    });
+    restoreSpeechAudioCategory();
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: "confirm_response", text: "" }));
     }
