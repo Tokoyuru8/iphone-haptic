@@ -39,3 +39,6 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# アイコン候補・差し替え前バックアップ（ビルドに不要）
+assets/icon_candidates/
