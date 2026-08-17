@@ -286,11 +286,23 @@ export default function App() {
     }
   }, []);
 
-  // GOAL到着音プレイヤーの初期化(2026-08-17): 一度だけ生成し、鳴らすたびseekTo(0)+playで使い回す
+  // GOAL到着音プレイヤーの初期化(2026-08-17): 一度だけ生成し、鳴らすたびseekTo(0)+playで使い回す。
+  // try/catchなしで例外が出ると(React 19はエフェクト内の未捕捉例外でアプリ全体を
+  // アンマウントする)、ネイティブクラッシュを伴わないため解析データにログが残らず
+  // 「白画面のまま」になる不具合を実機で確認(2026-08-17)。初期化失敗時はGOAL音が
+  // 鳴らないだけに留め、アプリ本体は落とさない。
   useEffect(() => {
-    goalPlayerRef.current = createAudioPlayer(require("./assets/goal.wav"));
+    try {
+      goalPlayerRef.current = createAudioPlayer(require("./assets/goal.wav"));
+    } catch (e) {
+      goalPlayerRef.current = null;
+    }
     return () => {
-      goalPlayerRef.current?.remove();
+      try {
+        goalPlayerRef.current?.remove();
+      } catch (e) {
+        // ignore
+      }
     };
   }, []);
 
