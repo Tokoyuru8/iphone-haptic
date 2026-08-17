@@ -41,8 +41,7 @@
           "microphonePermission": "容量確認の音声回答にマイクを使用します",
           "speechRecognitionPermission": "容量確認の音声回答を認識するために使用します"
         }
-      ],
-      "expo-audio"
+      ]
     ],
     "extra": {
       "eas": {
