@@ -4,6 +4,9 @@ import { StatusBar } from "expo-status-bar";
 import * as Haptics from "expo-better-haptics";
 // 音声ハイブリッド誘導（2026-07-10、6/15面談で先生と合意した方式）: 到達・モード切替は音声で通知
 import * as Speech from "expo-speech";
+// GOAL到着音の別経路再生(2026-08-17): Core Haptics AudioCustom(goal.wav)は有線イヤホン等に
+// 出力されない既知の制約があるため、通常のメディア音声経路(TTSと同じ)で確実に鳴らす
+import { createAudioPlayer } from "expo-audio";
 // 容量ファミリー確認（2026-07-14）: 音声入力段の容量違い確認用（設計: product-family-resolution-202607.md）
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-speech-recognition";
 
@@ -173,16 +176,15 @@ async function vibratePattern(direction, intensity) {
       break;
 
     case "GOAL":
-      // 到着パターン: goal.wav(0.15s)を3連打 + 振動
+      // 到着パターン: 振動のみ3連打(音はexpo-audioで別経路再生、2026-08-17変更)
+      // 旧実装はgoal.wavをAudioCustomイベントとして振動に同期埋め込みしていたが、
+      // Core HapticsのAudioCustom経路は有線イヤホン等に出力されない既知の制約があるため分離した
       await Haptics.playAHAPAsync({
         Pattern: [
-          { Event: { Time: 0, EventType: "AudioCustom", EventWaveformPath: "goal.wav", EventParameters: [{ ParameterID: "AudioVolume", ParameterValue: 1.0 }] } },
           { Event: transient(0, 1.0, 0.5) },
           { Event: continuous(0.01, 0.14, 1.0, 0.5) },
-          { Event: { Time: 0.2, EventType: "AudioCustom", EventWaveformPath: "goal.wav", EventParameters: [{ ParameterID: "AudioVolume", ParameterValue: 1.0 }] } },
           { Event: transient(0.2, 1.0, 0.5) },
           { Event: continuous(0.21, 0.14, 1.0, 0.5) },
-          { Event: { Time: 0.4, EventType: "AudioCustom", EventWaveformPath: "goal.wav", EventParameters: [{ ParameterID: "AudioVolume", ParameterValue: 1.0 }] } },
           { Event: transient(0.4, 1.0, 0.5) },
           { Event: continuous(0.41, 0.14, 1.0, 0.5) },
         ],
@@ -240,6 +242,7 @@ export default function App() {
   const [currentDir, setCurrentDir] = useState("STOP");
   const [commandCount, setCommandCount] = useState(0);
   const [goalSound, setGoalSound] = useState(true);
+  const goalPlayerRef = useRef(null);
   const wsRef = useRef(null);
   const reconnectRef = useRef(null);
   const currentDirRef = useRef("STOP");
@@ -281,6 +284,14 @@ export default function App() {
       clearInterval(loopRef.current);
       loopRef.current = null;
     }
+  }, []);
+
+  // GOAL到着音プレイヤーの初期化(2026-08-17): 一度だけ生成し、鳴らすたびseekTo(0)+playで使い回す
+  useEffect(() => {
+    goalPlayerRef.current = createAudioPlayer(require("./assets/goal.wav"));
+    return () => {
+      goalPlayerRef.current?.remove();
+    };
   }, []);
 
   const connect = useCallback(() => {
@@ -362,6 +373,17 @@ export default function App() {
             stopVibLoop();
             if (goalSound) {
               await vibratePattern("GOAL", intensity);
+              // 到着音(2026-08-17): Core Haptics側のAudioCustomは有線イヤホンで鳴らないため、
+              // 通常のメディア音声経路で別途再生する(TTSと同じ経路、有線でも確認済み)
+              try {
+                const p = goalPlayerRef.current;
+                if (p) {
+                  await p.seekTo(0);
+                  p.play();
+                }
+              } catch (e) {
+                // ignore
+              }
             } else {
               await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             }
