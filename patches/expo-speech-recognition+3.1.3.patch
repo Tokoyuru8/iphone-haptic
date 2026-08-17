@@ -1,0 +1,19 @@
+diff --git a/node_modules/expo-speech-recognition/ios/ExpoSpeechRecognizer.swift b/node_modules/expo-speech-recognition/ios/ExpoSpeechRecognizer.swift
+index c474f80..b8ef47e 100644
+--- a/node_modules/expo-speech-recognition/ios/ExpoSpeechRecognizer.swift
++++ b/node_modules/expo-speech-recognition/ios/ExpoSpeechRecognizer.swift
+@@ -621,6 +621,14 @@ actor ExpoSpeechRecognizer: ObservableObject {
+     }
+ 
+     try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
++
++    // 有線イヤホン接続時の音声認識精度対策(2026-08-17): Bluetoothは既にallowBluetoothを
++    // 外すことで本体マイクへ固定済みだが、有線ヘッドセットは接続されると自動的に
++    // イヤホン付属マイク(通話用途向けで音声認識には不向き)にルーティングされてしまう。
++    // availableInputsからbuiltInMicを明示的に選び、有線接続時も本体マイクを優先させる。
++    if let builtInMic = audioSession.availableInputs?.first(where: { $0.portType == .builtInMic }) {
++      try? audioSession.setPreferredInput(builtInMic)
++    }
+   }
+ 
+   private static func audioInputIsBusy(_ recordingFormat: AVAudioFormat) -> Bool {

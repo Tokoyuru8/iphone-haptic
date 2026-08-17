@@ -6,7 +6,8 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "expo": "~54.0.33",
@@ -19,5 +20,8 @@
     "react": "19.1.0",
     "react-native": "0.81.5"
   },
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "patch-package": "^8.0.1"
+  }
 }
