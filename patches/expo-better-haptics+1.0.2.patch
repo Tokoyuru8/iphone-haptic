@@ -1,0 +1,134 @@
+diff --git a/node_modules/expo-better-haptics/build/index.d.ts b/node_modules/expo-better-haptics/build/index.d.ts
+index e1b5e8f..f84a345 100644
+--- a/node_modules/expo-better-haptics/build/index.d.ts
++++ b/node_modules/expo-better-haptics/build/index.d.ts
+@@ -116,6 +116,7 @@ declare class ExpoBetterHaptics {
+      * @returns Promise that resolves when the AHAP pattern is played
+      */
+     static playAHAPAsync(ahapData: Record<string, any> | string): Promise<void>;
++    static playAHAPAndWaitAsync(ahapData: Record<string, any> | string): Promise<boolean>;
+     /**
+      * Ensure the haptic engine is initialized
+      * Internal helper method
+@@ -131,6 +132,7 @@ export declare const playPatternAsync: any;
+ export declare const playTransientAsync: any;
+ export declare const playContinuousAsync: any;
+ export declare const playAHAPAsync: any;
++export declare const playAHAPAndWaitAsync: any;
+ export declare const initialize: any;
+ export declare const start: any;
+ export declare const stop: any;
+diff --git a/node_modules/expo-better-haptics/build/index.js b/node_modules/expo-better-haptics/build/index.js
+index c6aa654..d4e5a0f 100644
+--- a/node_modules/expo-better-haptics/build/index.js
++++ b/node_modules/expo-better-haptics/build/index.js
+@@ -290,6 +290,15 @@ class ExpoBetterHaptics {
+         }
+         await ExpoBetterHapticsModule.playAHAP(patternData);
+     }
++    /**
++     * Play an AHAP pattern and resolve only after the pattern has finished playing.
++     * (iphone-haptic patch: playAHAPAsync resolves as soon as playback starts)
++     */
++    static async playAHAPAndWaitAsync(ahapData) {
++        await this.ensureInitialized();
++        const data = typeof ahapData === 'string' ? JSON.parse(ahapData) : ahapData;
++        return await ExpoBetterHapticsModule.playAHAPAndWait(data);
++    }
+     /**
+      * Ensure the haptic engine is initialized
+      * Internal helper method
+@@ -310,6 +319,7 @@ export const playPatternAsync = ExpoBetterHaptics.playPatternAsync.bind(ExpoBett
+ export const playTransientAsync = ExpoBetterHaptics.playTransientAsync.bind(ExpoBetterHaptics);
+ export const playContinuousAsync = ExpoBetterHaptics.playContinuousAsync.bind(ExpoBetterHaptics);
+ export const playAHAPAsync = ExpoBetterHaptics.playAHAPAsync.bind(ExpoBetterHaptics);
++export const playAHAPAndWaitAsync = ExpoBetterHaptics.playAHAPAndWaitAsync.bind(ExpoBetterHaptics);
+ // Export core functions
+ export const initialize = ExpoBetterHaptics.initialize.bind(ExpoBetterHaptics);
+ export const start = ExpoBetterHaptics.start.bind(ExpoBetterHaptics);
+diff --git a/node_modules/expo-better-haptics/ios/ExpoBetterHapticsModule.swift b/node_modules/expo-better-haptics/ios/ExpoBetterHapticsModule.swift
+index 0bfc6d4..35e43d6 100644
+--- a/node_modules/expo-better-haptics/ios/ExpoBetterHapticsModule.swift
++++ b/node_modules/expo-better-haptics/ios/ExpoBetterHapticsModule.swift
+@@ -15,6 +15,10 @@ public class ExpoBetterHapticsModule: Module {
+     private var notificationGenerator: UINotificationFeedbackGenerator?
+     private var selectionGenerator: UISelectionFeedbackGenerator?
+ 
++    // playAHAPAndWait 用: 再生が終わるまで player を保持しておく（解放されると completionHandler が呼ばれない）
++    private var waitingPlayers: [ObjectIdentifier: CHHapticAdvancedPatternPlayer] = [:]
++    private let waitingPlayersLock = NSLock()
++    
+     // Set up the haptic engine when module is initialized
+     public func definition() -> ModuleDefinition {
+         Name("ExpoBetterHaptics")
+@@ -397,5 +401,40 @@ public class ExpoBetterHapticsModule: Module {
+                 return false
+             }
+         }
++
++        // playAHAP と同じだが、パターンが鳴り終わってから resolve する（iphone-haptic 用パッチ）。
++        // playAHAP は player.start 直後に返るため、JS 側で await しても再生終了を待てない
++        AsyncFunction("playAHAPAndWait") { (ahapData: [CHHapticPattern.Key: Any], promise: Promise) in
++            guard let engine = self.engine, self.supportsHaptics else {
++                promise.resolve(false)
++                return
++            }
++
++            do {
++                let pattern = try CHHapticPattern(dictionary: ahapData)
++                let player = try engine.makeAdvancedPlayer(with: pattern)
++                let key = ObjectIdentifier(player)
++
++                player.completionHandler = { [weak self] error in
++                    if let error = error {
++                        print("AHAP pattern finished with error: \(error)")
++                    }
++                    self?.waitingPlayersLock.lock()
++                    self?.waitingPlayers.removeValue(forKey: key)
++                    self?.waitingPlayersLock.unlock()
++                    promise.resolve(error == nil)
++                }
++
++                self.waitingPlayersLock.lock()
++                self.waitingPlayers[key] = player
++                self.waitingPlayersLock.unlock()
++
++                try engine.start()
++                try player.start(atTime: CHHapticTimeImmediate)
++            } catch {
++                print("Failed to play AHAP pattern (wait): \(error)")
++                promise.resolve(false)
++            }
++        }
+     }
+ }
+\ No newline at end of file
+diff --git a/node_modules/expo-better-haptics/src/index.ts b/node_modules/expo-better-haptics/src/index.ts
+index caeec4a..de754d5 100644
+--- a/node_modules/expo-better-haptics/src/index.ts
++++ b/node_modules/expo-better-haptics/src/index.ts
+@@ -351,6 +351,16 @@ class ExpoBetterHaptics {
+         await ExpoBetterHapticsModule.playAHAP(patternData)
+     }
+ 
++    /**
++     * Play an AHAP pattern and resolve only after the pattern has finished playing.
++     * (iphone-haptic patch: playAHAPAsync resolves as soon as playback starts)
++     */
++    static async playAHAPAndWaitAsync(ahapData: Record<string, any> | string): Promise<boolean> {
++        await this.ensureInitialized()
++        const data = typeof ahapData === 'string' ? JSON.parse(ahapData) : ahapData
++        return await ExpoBetterHapticsModule.playAHAPAndWait(data)
++    }
++
+     /**
+      * Ensure the haptic engine is initialized
+      * Internal helper method
+@@ -373,6 +383,7 @@ export const playPatternAsync = ExpoBetterHaptics.playPatternAsync.bind(ExpoBett
+ export const playTransientAsync = ExpoBetterHaptics.playTransientAsync.bind(ExpoBetterHaptics)
+ export const playContinuousAsync = ExpoBetterHaptics.playContinuousAsync.bind(ExpoBetterHaptics)
+ export const playAHAPAsync = ExpoBetterHaptics.playAHAPAsync.bind(ExpoBetterHaptics)
++export const playAHAPAndWaitAsync = ExpoBetterHaptics.playAHAPAndWaitAsync.bind(ExpoBetterHaptics)
+ 
+ // Export core functions
+ export const initialize = ExpoBetterHaptics.initialize.bind(ExpoBetterHaptics)

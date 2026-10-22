@@ -87,17 +87,35 @@ function continuous(time, duration, intensity, sharpness) {
   };
 }
 
+// --- 振動の重なり防止（2026-10-22） ---
+// hapticBusy: 鳴り終わりを待つ版（playAndWait）で再生中のパターン。
+// unwaitedEndAt: 待たない版（playNoWait）で鳴らしたパターンが鳴り終わる見込み時刻。
+// 待つ版は unwaitedEndAt まで、待たない版は hapticBusy が終わるまで待ってから鳴らす
+const MAX_PATTERN_MS = 600; // 最長パターン（FORWARD・GOAL 約0.55s）に余裕を足した値
+let hapticBusy = Promise.resolve();
+let unwaitedEndAt = 0;
+
+// 待たない再生（従来どおり鳴らし始めた瞬間に戻る）
+async function playNoWait(ahap) {
+  await hapticBusy;
+  unwaitedEndAt = Math.max(unwaitedEndAt, Date.now() + MAX_PATTERN_MS);
+  return Haptics.playAHAPAsync(ahap);
+}
+
 // 方向パターン設計（先行研究ベース）
 // 上下: メタファー（intensity漸増/漸減 + sharpness差）— Spence 2011, Rusconi et al. 2006
 // 左右: Tactonリズム（短-長 / 長-短）— Brown, Brewster & Purchase 2005
 // 全パターン300ms以内でリアルタイム性確保
-async function vibratePattern(direction, intensity) {
+// play: 再生関数（2026-10-22追加）。既定は従来どおり鳴らし始めた瞬間に戻る playNoWait（中身は playAHAPAsync）。
+// 方向振動の間隔制御では playAndWait（鳴り終わるまで待つ版）を渡す。
+// 旧: 各caseで Haptics.playAHAPAsync を直接呼んでいた（呼び出しを play に置き換えただけで中身は同じ）
+async function vibratePattern(direction, intensity, play = playNoWait) {
   if (direction === "STOP") return;
 
   switch (direction) {
     case "UP":
       // 上昇メタファー: 全intensity最大 + AudioCustom同期 + sharpness高(鋭い=上)
-      await Haptics.playAHAPAsync({
+      await play({
         Pattern: [
           { Event: audioImpact(0) },
           { Event: transient(0, 0.8, 1.0) },
@@ -112,7 +130,7 @@ async function vibratePattern(direction, intensity) {
 
     case "DOWN":
       // 下降メタファー: 強打→減衰 + AudioCustom同期 + sharpness低(重い)
-      await Haptics.playAHAPAsync({
+      await play({
         Pattern: [
           { Event: audioImpact(0) },
           { Event: transient(0, 1.0, 0.3) },
@@ -134,7 +152,7 @@ async function vibratePattern(direction, intensity) {
 
     case "LEFT":
       // Tactonリズム: 短→長 + AudioCustom同期 + 全intensity最大
-      await Haptics.playAHAPAsync({
+      await play({
         Pattern: [
           { Event: audioImpact(0) },
           { Event: transient(0, 1.0, 1.0) },
@@ -148,7 +166,7 @@ async function vibratePattern(direction, intensity) {
 
     case "RIGHT":
       // Tactonリズム: 長→短 + AudioCustom同期 + 全intensity最大
-      await Haptics.playAHAPAsync({
+      await play({
         Pattern: [
           { Event: audioImpact(0) },
           { Event: transient(0, 1.0, 1.0) },
@@ -163,7 +181,7 @@ async function vibratePattern(direction, intensity) {
     case "FORWARD":
     case "ALL_ON":
       // 距離フィードバック: intensityが距離に連動（近い=弱い、遠い=強い）
-      await Haptics.playAHAPAsync({
+      await play({
         Pattern: [
           { Event: audioImpact(0) },
           { Event: transient(0, Math.max(0.4, intensity), 1.0) },
@@ -174,7 +192,7 @@ async function vibratePattern(direction, intensity) {
 
     case "GOAL":
       // 到着パターン: goal.wav(0.15s)を3連打 + 振動
-      await Haptics.playAHAPAsync({
+      await play({
         Pattern: [
           { Event: { Time: 0, EventType: "AudioCustom", EventWaveformPath: "goal.wav", EventParameters: [{ ParameterID: "AudioVolume", ParameterValue: 1.0 }] } },
           { Event: transient(0, 1.0, 0.5) },
@@ -190,7 +208,7 @@ async function vibratePattern(direction, intensity) {
       break;
 
     default:
-      await Haptics.playAHAPAsync({
+      await play({
         Pattern: [
           { Event: audioImpact(0) },
           { Event: transient(0, 1.0, 1.0) },
@@ -223,10 +241,41 @@ function buildTrials() {
 
 const intervalLabel = (ms) => (ms === 200 ? "短" : ms === 500 ? "中" : "長");
 
+// --- 鳴り終わりを待つ再生（2026-10-22、案B: notes/vibration-interval-fix-proposal-202610.md） ---
+// playAHAPAsync は鳴らし始めた瞬間に戻るため、await しても再生終了を待てない。
+// patches/expo-better-haptics で追加した playAHAPAndWaitAsync は、iOSから再生終了の通知が来てから戻る。
+// 通知が来ない場合に止まらないよう、最長パターン(約0.55s)より十分長いタイムアウトを付ける
+const PLAY_WAIT_TIMEOUT_MS = 1500;
+
+function playAndWait(ahap) {
+  const run = async () => {
+    // 待たない再生（FORWARDループ・単発の振動）がまだ鳴っていれば、終わるまで待つ
+    const rest = unwaitedEndAt - Date.now();
+    if (rest > 0) await sleep(rest);
+    if (!Haptics.playAHAPAndWaitAsync) {
+      // パッチ未適用のビルド向けの保険: 再生後に最長パターン分だけ待つ
+      await Haptics.playAHAPAsync(ahap);
+      await sleep(600);
+      return;
+    }
+    await Promise.race([Haptics.playAHAPAndWaitAsync(ahap), sleep(PLAY_WAIT_TIMEOUT_MS)]);
+  };
+  hapticBusy = hapticBusy.then(run, run);
+  return hapticBusy;
+}
+
+const vibratePatternAndWait = (direction) => vibratePattern(direction, 1.0, playAndWait);
+
 async function experimentTrial(direction, intervalMs) {
-  await vibratePattern(direction, 1.0);
+  // 旧: playAHAPAsync が鳴らし始めた瞬間に戻るため、sleep(intervalMs) が1回目の再生中に始まり、
+  //     200ms条件では2回目が1回目に重なって無音区間ができていなかった（2026-10-22判明）
+  // await vibratePattern(direction, 1.0);
+  // await sleep(intervalMs);
+  // await vibratePattern(direction, 1.0);
+  // 新: 1回目が鳴り終わってから intervalMs の無音をはさんで2回目を鳴らす
+  await vibratePatternAndWait(direction);
   await sleep(intervalMs);
-  await vibratePattern(direction, 1.0);
+  await vibratePatternAndWait(direction);
 }
 
 // --- メインアプリ ---
@@ -281,6 +330,29 @@ export default function App() {
       clearInterval(loopRef.current);
       loopRef.current = null;
     }
+  }, []);
+
+  // 方向振動ループ（2026-10-22）: パターン→鳴り終わり→無音gap_ms→… をiPhone側で刻む。
+  // 旧: Jetsonから受信するたびに1回鳴らし、間隔はJetsonの送信間隔(0.5〜1.5s)で決まっていた
+  // 方向とgapが前回と同じメッセージでは何もしない（リズムを崩さない）。token が変わったら古いループは止まる
+  const dirLoopRef = useRef({ token: 0, key: null });
+
+  const stopDirLoop = useCallback(() => {
+    dirLoopRef.current = { token: dirLoopRef.current.token + 1, key: null };
+  }, []);
+
+  const startDirLoop = useCallback((dir, gapMs) => {
+    const key = `${dir}:${gapMs}`;
+    if (dirLoopRef.current.key === key) return;
+    const token = dirLoopRef.current.token + 1;
+    dirLoopRef.current = { token, key };
+    (async () => {
+      while (dirLoopRef.current.token === token) {
+        await vibratePatternAndWait(dir);
+        if (dirLoopRef.current.token !== token) break;
+        await sleep(gapMs);
+      }
+    })();
   }, []);
 
   const connect = useCallback(() => {
@@ -358,7 +430,16 @@ export default function App() {
           currentDirRef.current = dir;
           currentIntRef.current = intensity;
 
-          if (dir === "GOAL") {
+          // 方向振動の間隔（2026-10-22）: gap_ms 付きの UP/DOWN/LEFT/RIGHT はiPhone側のループで刻む。
+          // gap_ms が無いメッセージ（更新前のJetson）は従来どおり受信のたびに1回鳴らす
+          const gapMs = typeof data.gap_ms === "number" ? data.gap_ms : null;
+          const isDirection = ["UP", "DOWN", "LEFT", "RIGHT"].includes(dir);
+
+          if (isDirection && gapMs !== null) {
+            stopVibLoop();
+            startDirLoop(dir, gapMs);
+          } else if (dir === "GOAL") {
+            stopDirLoop();
             stopVibLoop();
             if (goalSound) {
               await vibratePattern("GOAL", intensity);
@@ -367,8 +448,10 @@ export default function App() {
             }
             await sleep(1000);
           } else if (dir === "STOP" || intensity === 0) {
+            stopDirLoop();
             stopVibLoop();
           } else {
+            stopDirLoop();
             await vibratePattern(dir, intensity);
             if (dir === "FORWARD" || dir === "ALL_ON") {
               startVibLoop();
@@ -388,6 +471,7 @@ export default function App() {
       if (wsRef.current !== ws) return;
       setStatus("切断");
       stopVibLoop();
+      stopDirLoop();
       if (reconnectRef.current) clearTimeout(reconnectRef.current);
       reconnectRef.current = setTimeout(() => connect(), 3000);
     };
@@ -397,17 +481,18 @@ export default function App() {
     };
 
     wsRef.current = ws;
-  }, [serverIp, port, startVibLoop, stopVibLoop]);
+  }, [serverIp, port, startVibLoop, stopVibLoop, startDirLoop, stopDirLoop]);
 
   const disconnect = useCallback(() => {
     if (reconnectRef.current) clearTimeout(reconnectRef.current);
     stopVibLoop();
+    stopDirLoop();
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
     }
     setStatus("未接続");
-  }, [stopVibLoop]);
+  }, [stopVibLoop, stopDirLoop]);
 
   useEffect(() => {
     return () => {
