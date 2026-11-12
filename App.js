@@ -38,6 +38,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // してもマイクは使えなくならない。
 // 質問の読み上げが終わってから聞き取りを始めるまでの待ち時間(2026-11-12)
 const CONFIRM_LISTEN_DELAY_MS = 600;
+// 方向振動(上下左右)を1種類のパターンにそろえる(2026-11-12)。false で向きごとのパターンに戻る
+const UNIFORM_DIRECTION_VIBRATION = true;
 
 function restoreSpeechAudioCategory() {
   ExpoSpeechRecognitionModule.setCategoryIOS({
@@ -114,6 +116,20 @@ async function playNoWait(ahap) {
 // 旧: 各caseで Haptics.playAHAPAsync を直接呼んでいた（呼び出しを play に置き換えただけで中身は同じ）
 async function vibratePattern(direction, intensity, play = playNoWait) {
   if (direction === "STOP") return;
+
+  // 2026-11-12 研究室(ユーザー判断): 向きは音声(「右です」など)で伝えるので、振動は向きで変えず
+  // 1種類のパターンにする。どれくらいかは振動の間隔(gap_ms)だけで伝える。
+  // 向きごとのパターン(下のswitch)は残しておき、UNIFORM_DIRECTION_VIBRATION=false で元に戻せる
+  if (UNIFORM_DIRECTION_VIBRATION && ["UP", "DOWN", "LEFT", "RIGHT"].includes(direction)) {
+    await play({
+      Pattern: [
+        { Event: audioImpact(0) },
+        { Event: transient(0, 1.0, 0.7) },
+        { Event: continuous(0.01, 0.12, 1.0, 0.7) },
+      ],
+    });
+    return;
+  }
 
   switch (direction) {
     case "UP":
