@@ -41,6 +41,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const CONFIRM_LISTEN_DELAY_MS = 300;
 // 聞き取りが終わってから答えを送るまでの待ち時間(最終結果を待つ)(2026-11-12)
 const CONFIRM_END_WAIT_MS = 400;
+// 最後の文字からこれだけ無音なら話し終わりとみなす(2026-11-12、ユーザー案「1〜2秒待つ」)
+const CONFIRM_SILENCE_MS = 1500;
+// 聞き取りの上限(何も話さなかったときもここで終わる)(2026-11-12)
+const CONFIRM_MAX_LISTEN_MS = 10000;
 // 方向振動(上下左右)を1種類のパターンにそろえる(2026-11-12)。false で向きごとのパターンに戻る
 const UNIFORM_DIRECTION_VIBRATION = true;
 // 画面上の「テスト／実験」タブを出すか(2026-11-12)。false ならテスト画面だけ
@@ -331,6 +335,15 @@ export default function App() {
   // 終了(end)が最終結果より先に来ることがあり、また error と end の両方で送って空の答えが先に届いていた。
   // 1回の質問につき答えは1回だけ送り、最終結果(isFinal)を優先する
   const confirmSentRef = useRef(false);
+  // 聞き取りの終わりをアプリ側で決めるためのタイマー(2026-11-12)
+  const silenceTimerRef = useRef(null);
+  const listenLimitTimerRef = useRef(null);
+  const clearListenTimers = () => {
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    if (listenLimitTimerRef.current) clearTimeout(listenLimitTimerRef.current);
+    silenceTimerRef.current = null;
+    listenLimitTimerRef.current = null;
+  };
 
   // ターゲット商品表示用 state（2026-07-14）
   const [targetName, setTargetName] = useState("");
@@ -440,7 +453,10 @@ export default function App() {
               setTimeout(() => ExpoSpeechRecognitionModule.start({
                 lang: "ja-JP",
                 interimResults: true,
-                continuous: false,
+                // continuous: false,  // 旧: iOSが短い無音で勝手に終わらせ、空の答えや言い切る前の答えになっていた
+                // 2026-11-12 研究室(ユーザー案): 話し終わったと思ってから少し待つ。終わりはアプリ側で決める
+                // (最後の文字から CONFIRM_SILENCE_MS 無音で終了。下の "result" / "start" を参照)
+                continuous: true,
                 // 数字の聞き取り精度向上(2026-07-14): 「5グラム」が「小グラム」に誤認識される
                 // 問題があったため、候補語をヒントとして渡す(iOS SFSpeechRecognitionRequest.contextualStrings)
                 contextualStrings: hintWords,
@@ -543,6 +559,9 @@ export default function App() {
     // 音声認識が実際に開始したタイミングで合図(振動+通知音)と表示を確実に切り替える(2026-07-14)
     setConfirmListening(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    // 何も話さなかったとき・話し続けるときの上限(2026-11-12)
+    clearListenTimers();
+    listenLimitTimerRef.current = setTimeout(() => ExpoSpeechRecognitionModule.stop(), CONFIRM_MAX_LISTEN_MS);
     // タイムアウトの起点をTTS再生完了後(=STT開始時)にするため、Jetson側に開始を通知(2026-07-14)
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: "confirm_listening_started" }));
@@ -564,14 +583,19 @@ export default function App() {
     if (transcript) {
       confirmTranscriptRef.current = transcript;
       setConfirmTranscript(transcript);
+      // 最後の文字から CONFIRM_SILENCE_MS 何も増えなければ話し終わりとみなして止める(2026-11-12)
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = setTimeout(() => ExpoSpeechRecognitionModule.stop(), CONFIRM_SILENCE_MS);
     }
-    // 最終結果が来たらすぐ送る(2026-11-12)
-    if (event.isFinal && confirmTranscriptRef.current) {
-      sendConfirmOnce(confirmTranscriptRef.current);
-    }
+    // 旧(2026-11-12 午後): 最終結果が来たらすぐ送っていた。continuous では区切りごとに isFinal が来るので、
+    // 言い切る前に送ってしまう。送るのは end のあとだけにする
+    // if (event.isFinal && confirmTranscriptRef.current) {
+    //   sendConfirmOnce(confirmTranscriptRef.current);
+    // }
   });
 
   useSpeechRecognitionEvent("end", () => {
+    clearListenTimers();
     setConfirmListening(false);
     setConfirmActive(false);
     // オーディオ出力先を復元(2026-07-14): STT開始時にdefaultToSpeakerへ切り替えたままだと
@@ -588,6 +612,7 @@ export default function App() {
   });
 
   useSpeechRecognitionEvent("error", () => {
+    clearListenTimers();
     setConfirmListening(false);
     setConfirmActive(false);
     // オーディオ出力先を復元(2026-07-14): "end"と同様の理由
