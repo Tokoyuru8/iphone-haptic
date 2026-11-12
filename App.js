@@ -36,6 +36,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // 戻し、STT が残していく measurement の信号処理抑制を解除する。
 // STT 側は start() の iosCategory で playAndRecord に切り替わるので、ここで playback に
 // してもマイクは使えなくならない。
+// 質問の読み上げが終わってから聞き取りを始めるまでの待ち時間(2026-11-12)
+const CONFIRM_LISTEN_DELAY_MS = 600;
+
 function restoreSpeechAudioCategory() {
   ExpoSpeechRecognitionModule.setCategoryIOS({
     category: "playback",
@@ -403,7 +406,10 @@ export default function App() {
             language: "ja-JP",
             onDone: () => {
               // 聞き取り中フラグ・合図音は"start"イベント側で確実に発火させる(下記useSpeechRecognitionEvent参照)
-              ExpoSpeechRecognitionModule.start({
+              // 2026-11-12 研究室: 質問の最後の方が聞こえないと指摘。onDone は音が鳴り終わる少し前に来るため、
+              // すぐ録音用のオーディオ設定に切り替えると最後の音が切れる。少し待ってから聞き取りを始める
+              // ExpoSpeechRecognitionModule.start({  // 旧: すぐ開始
+              setTimeout(() => ExpoSpeechRecognitionModule.start({
                 lang: "ja-JP",
                 interimResults: true,
                 continuous: false,
@@ -416,7 +422,7 @@ export default function App() {
                   category: "playAndRecord",
                   categoryOptions: ["defaultToSpeaker"],
                 },
-              });
+              }), CONFIRM_LISTEN_DELAY_MS);
             },
           });
         } else if (data.type === "vibrate") {
