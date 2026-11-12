@@ -40,6 +40,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const CONFIRM_LISTEN_DELAY_MS = 600;
 // 方向振動(上下左右)を1種類のパターンにそろえる(2026-11-12)。false で向きごとのパターンに戻る
 const UNIFORM_DIRECTION_VIBRATION = true;
+// 画面上の「テスト／実験」タブを出すか(2026-11-12)。false ならテスト画面だけ
+const SHOW_MODE_TABS = false;
 
 function restoreSpeechAudioCategory() {
   ExpoSpeechRecognitionModule.setCategoryIOS({
@@ -301,7 +303,9 @@ async function experimentTrial(direction, intervalMs) {
 
 export default function App() {
   const [mode, setMode] = useState("test");
-  const [serverIp, setServerIp] = useState("192.168.1.85");
+  // const [serverIp, setServerIp] = useState("192.168.1.85");  // 旧
+  // 2026-11-12: 研究室の Jetson の IP を最初から入れておく(ユーザー要望)
+  const [serverIp, setServerIp] = useState("172.16.11.197");
   const [port, setPort] = useState("8765");
   const [status, setStatus] = useState("未接続");
   const [lastCommand, setLastCommand] = useState("-");
@@ -666,7 +670,8 @@ export default function App() {
     <View style={styles.container}>
       <StatusBar style="light" />
 
-      <View style={styles.modeRow}>
+      {/* 2026-11-12 研究室(ユーザー要望): 上のタブはいらない。テスト画面だけにする。SHOW_MODE_TABS=true で戻る */}
+      {SHOW_MODE_TABS && <View style={styles.modeRow}>
         <Pressable
           style={[styles.modeBtn, mode === "test" && styles.modeBtnActive]}
           onPress={() => setMode("test")}
@@ -679,7 +684,7 @@ export default function App() {
         >
           <Text style={[styles.modeBtnText, mode === "experiment" && styles.modeBtnTextActive]}>実験</Text>
         </Pressable>
-      </View>
+      </View>}
 
       {mode === "test" ? (
         <>
