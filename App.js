@@ -37,7 +37,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // STT 側は start() の iosCategory で playAndRecord に切り替わるので、ここで playback に
 // してもマイクは使えなくならない。
 // 質問の読み上げが終わってから聞き取りを始めるまでの待ち時間(2026-11-12)
-const CONFIRM_LISTEN_DELAY_MS = 600;
+// const CONFIRM_LISTEN_DELAY_MS = 600;  // 旧: 長すぎて話し始めの音(「キュキュ」)を聞き逃した
+const CONFIRM_LISTEN_DELAY_MS = 300;
+// 聞き取りが終わってから答えを送るまでの待ち時間(最終結果を待つ)(2026-11-12)
+const CONFIRM_END_WAIT_MS = 400;
 // 方向振動(上下左右)を1種類のパターンにそろえる(2026-11-12)。false で向きごとのパターンに戻る
 const UNIFORM_DIRECTION_VIBRATION = true;
 // 画面上の「テスト／実験」タブを出すか(2026-11-12)。false ならテスト画面だけ
@@ -324,6 +327,10 @@ export default function App() {
   const [confirmListening, setConfirmListening] = useState(false);
   const [confirmTranscript, setConfirmTranscript] = useState("");
   const confirmTranscriptRef = useRef("");
+  // 2026-11-12 研究室: 画面には「キュキュット」と出たのに Jetson には途中の「ケット」が届いた。
+  // 終了(end)が最終結果より先に来ることがあり、また error と end の両方で送って空の答えが先に届いていた。
+  // 1回の質問につき答えは1回だけ送り、最終結果(isFinal)を優先する
+  const confirmSentRef = useRef(false);
 
   // ターゲット商品表示用 state（2026-07-14）
   const [targetName, setTargetName] = useState("");
@@ -418,6 +425,7 @@ export default function App() {
           const promptText = data.prompt_text || "";
           const hintWords = data.hint_words || [];
           confirmTranscriptRef.current = "";
+          confirmSentRef.current = false;
           setConfirmTranscript("");
           setConfirmPromptText(promptText);
           setConfirmActive(true);
@@ -541,10 +549,26 @@ export default function App() {
     }
   });
 
+  // 答えを1回だけ送る(2026-11-12)
+  const sendConfirmOnce = (text) => {
+    if (confirmSentRef.current) return;
+    confirmSentRef.current = true;
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "confirm_response", text: text || "" }));
+    }
+  };
+
   useSpeechRecognitionEvent("result", (event) => {
     const transcript = event.results?.[0]?.transcript || "";
-    confirmTranscriptRef.current = transcript;
-    setConfirmTranscript(transcript);
+    // 途中結果で空が来ても、それまでの文字は消さない(2026-11-12)
+    if (transcript) {
+      confirmTranscriptRef.current = transcript;
+      setConfirmTranscript(transcript);
+    }
+    // 最終結果が来たらすぐ送る(2026-11-12)
+    if (event.isFinal && confirmTranscriptRef.current) {
+      sendConfirmOnce(confirmTranscriptRef.current);
+    }
   });
 
   useSpeechRecognitionEvent("end", () => {
@@ -553,11 +577,14 @@ export default function App() {
     // オーディオ出力先を復元(2026-07-14): STT開始時にdefaultToSpeakerへ切り替えたままだと
     // 以降のSpeech.speak(方向案内・到達通知)が本体スピーカーに出てイヤホンで聞こえなくなるため
     restoreSpeechAudioCategory();
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(
-        JSON.stringify({ type: "confirm_response", text: confirmTranscriptRef.current })
-      );
-    }
+    // 旧: すぐ送っていた
+    // if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+    //   wsRef.current.send(
+    //     JSON.stringify({ type: "confirm_response", text: confirmTranscriptRef.current })
+    //   );
+    // }
+    // 最終結果が end のあとに届くことがあるので、少し待ってから送る(2026-11-12)
+    setTimeout(() => sendConfirmOnce(confirmTranscriptRef.current), CONFIRM_END_WAIT_MS);
   });
 
   useSpeechRecognitionEvent("error", () => {
@@ -565,9 +592,11 @@ export default function App() {
     setConfirmActive(false);
     // オーディオ出力先を復元(2026-07-14): "end"と同様の理由
     restoreSpeechAudioCategory();
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: "confirm_response", text: "" }));
-    }
+    // 旧: すぐ空を送っていた(end でも送るので、空の答えが先に届いていた)
+    // if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+    //   wsRef.current.send(JSON.stringify({ type: "confirm_response", text: "" }));
+    // }
+    setTimeout(() => sendConfirmOnce(confirmTranscriptRef.current), CONFIRM_END_WAIT_MS * 2);
   });
 
   const testVibration = async (dir) => {
